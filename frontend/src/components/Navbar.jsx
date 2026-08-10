@@ -1,58 +1,32 @@
-const navItems = [
-  { name: "Home", icon: Home, href: "/" },
-  { name: "Courses", icon: BookOpen, href: "/courses" },
-  { name: "About", icon: BookMarked, href: "/about" },
-  { name: "Faculty", icon: Users, href: "/faculty" },
-  { name: "Contact", icon: Contact, href: "/contact" },
-];
+import React from "react";
+import { Link } from "react-router-dom";
 
+const Navbar = () => {
+  const links = [
+    { name: "Home", href: "/" },
+    { name: "Courses", href: "/courses" },
+    { name: "About", href: "/about" },
+    { name: "Faculty", href: "/faculty" },
+    { name: "Contact", href: "/contact" },
+    { name: "My Courses", href: "/mycourses" },
+  ];
 
-const menuRef = useRef(null);
-const isLoggedIn = isSignedIn && Boolean(localStorage.getItem("token")); // Check if the user is signed in and has a token
+  return (
+    <nav className="fixed inset-x-0 top-0 z-50 border-b border-slate-200 bg-white/90 backdrop-blur">
+      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+        <Link to="/" className="text-lg font-semibold text-slate-800">
+          LearnHub
+        </Link>
+        <div className="flex items-center gap-4 text-sm text-slate-600">
+          {links.map((link) => (
+            <Link key={link.name} to={link.href} className="transition hover:text-indigo-600">
+              {link.name}
+            </Link>
+          ))}
+        </div>
+      </div>
+    </nav>
+  );
+};
 
-const navItems = isSignedIn ? [
-  ...baseNav,
-  {name: "My Courses" , icon: BookOpenText, href: "/mycourses"},
-]
-: baseNav;
-
-
- // INSTANT token removal using Clerk logout event
-  useEffect(() => {
-    const handleLogout = () => {
-      localStorage.removeItem("token");
-      console.log("Token removed instantly on Clerk logout event");
-    };
-
-    window.addEventListener("user:signed_out", handleLogout);
-    return () => window.removeEventListener("user:signed_out", handleLogout);
-  }, []);
-
-  // Scroll hide/show
-  useEffect(() => {
-    const handleScroll = () => {
-      const scrollY = window.scrollY;
-      setIsScrolled(scrollY > 20);
-
-      if (scrollY > lastScrollY && scrollY > 100) {
-        setShowNavbar(false);
-      } else {
-        setShowNavbar(true);
-      }
-      setLastScrollY(scrollY);
-    };
-
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, [lastScrollY]);
-
-  // Close menu on outside click
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    };
-    if (isOpen) document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isOpen]);
+export default Navbar;

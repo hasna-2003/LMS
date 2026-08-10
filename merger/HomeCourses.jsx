@@ -1,5 +1,32 @@
-      .then((json) => {
+import React, { useState, useEffect } from "react";
+import { Star } from "lucide-react";
+import { toast } from "react-hot-toast";
+import { useAuth } from "@clerk/clerk-react";
+
+// Replace with your actual CSS module or styles import
+import homeCoursesStyles from "./HomeCourses.module.css";
+
+const API_BASE = process.env.REACT_APP_API_BASE || "http://localhost:5000";
+
+export default function CourseRatingList() {
+  const { getToken, isSignedIn } = useAuth();
+
+  const [courses, setCourses] = useState([]);
+  const [userRatings, setUserRatings] = useState({});
+  const [hoverRatings, setHoverRatings] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  // Fetch courses on mount
+  useEffect(() => {
+    let mounted = true;
+
+    async function fetchCourses() {
+      try {
+        const res = await fetch(`${API_BASE}/api/courses`);
+        const json = await res.json();
+
         if (!mounted) return;
+
         const items = (json && (json.items || json.courses || [])) || [];
         const mapped = items.map((c) => ({
           id: c._id || c.id,
@@ -14,7 +41,6 @@
             c.pricingType === "free" ||
             !c.price ||
             (c.price && !c.price.sale && !c.price.original),
-          // prefer avgRating / totalRatings from backend if available
           avgRating:
             typeof c.avgRating !== "undefined" ? c.avgRating : c.rating || 0,
           totalRatings:
@@ -24,19 +50,30 @@
           courseType: c.courseType || "regular",
         }));
 
+        setCourses(mapped);
+      } catch (err) {
+        console.error("Failed to fetch courses:", err);
+        toast.error("Failed to load courses");
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
 
+    fetchCourses();
 
-      const submitRatingToServer = async (courseId, ratingValue) => {
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Submit rating to API
+  const submitRatingToServer = async (courseId, ratingValue) => {
     try {
       const headers = { "Content-Type": "application/json" };
-      // try to get Clerk JWT token if available (works with Clerk)
-      try {
-        if (getToken) {
-          const token = await getToken().catch(() => null);
-          if (token) headers.Authorization = `Bearer ${token}`;
-        }
-      } catch (err) {
-        // ignore token errors and fall back to credentials include
+
+      if (getToken) {
+        const token = await getToken().catch(() => null);
+        if (token) headers.Authorization = `Bearer ${token}`;
       }
 
       const res = await fetch(`${API_BASE}/api/course/${courseId}/rate`, {
@@ -45,7 +82,9 @@
         credentials: "include",
         body: JSON.stringify({ rating: ratingValue }),
       });
+
       const data = await res.json().catch(() => ({ success: false }));
+
       if (!res.ok && !data.success) {
         const msg =
           (data && (data.message || data.error)) ||
@@ -53,21 +92,11 @@
         throw new Error(msg);
       }
 
-      // Expect server to return new avg & total (controller examples above do)
-      // Some servers return { success: true, avgRating, totalRatings }
-      const avg =
-        data.avgRating ??
-        data.course?.avgRating ??
-        data.course?.avgRating ??
-        data.course?.avgRating ??
-        data.course?.avgRating;
-      const total =
-        data.totalRatings ??
-        data.course?.ratingCount ??
-        data.course?.ratingCount ??
-        data.course?.ratingCount;
+      // Extract new aggregate ratings from server response
+      const avg = data.avgRating ?? data.course?.avgRating;
+      const total = data.totalRatings ?? data.course?.ratingCount;
 
-      // update UI with returned aggregates (fallback to previous if missing)
+      // Update UI state with updated server values
       setCourses((prev) =>
         prev.map((c) =>
           c.id === courseId
@@ -81,7 +110,7 @@
         )
       );
 
-      // store user's rating locally so UI reflects selection
+      // Save user rating locally
       setUserRatings((prev) => ({ ...prev, [courseId]: ratingValue }));
 
       toast.success("Thanks for your rating!");
@@ -93,14 +122,22 @@
     }
   };
 
+  // Missing Click Handler
+  const handleSetRating = async (e, courseId, ratingValue) => {
+    e.stopPropagation();
 
-  "⭐"
+    if (!isSignedIn) {
+      toast.error("Please sign in to rate this course.");
+      return;
+    }
 
+    await submitRatingToServer(courseId, ratingValue);
+  };
+
+  // Render Star Rating Component
   const renderInteractiveStars = (course) => {
-    // if signed in and user rated, show their rating; otherwise show rounded avg
     const userRating = userRatings[course.id] || 0;
     const hover = hoverRatings[course.id] || 0;
-    // when logged in prefer user's rating for filled stars, else show rounded avg
     const baseDisplay = userRating || Math.round(course.avgRating || 0);
     const displayRating = hover || baseDisplay;
 
@@ -116,6 +153,7 @@
             return (
               <button
                 key={i}
+                type="button"
                 aria-label={`Rate ${idx} star${idx > 1 ? "s" : ""}`}
                 onClick={(e) => handleSetRating(e, course.id, idx)}
                 onMouseEnter={() =>
@@ -129,7 +167,7 @@
                     ? homeCoursesStyles.starButtonActive
                     : homeCoursesStyles.starButtonInactive
                 }`}
-                style={{ background: "transparent" }}
+                style={{ background: "transparent", border: "none", cursor: "pointer" }}
               >
                 <Star
                   size={16}
@@ -160,3 +198,18 @@
       </div>
     );
   };
+
+  if (loading) return <div>Loading courses...</div>;
+
+  return (
+    <div className={homeCoursesStyles.courseList}>
+      {courses.map((course) => (
+        <div key={course.id} className={homeCoursesStyles.courseCard}>
+          <h3>{course.name}</h3>
+          <p>Teacher: {course.teacher}</p>
+          {renderInteractiveStars(course)}
+        </div>
+      ))}
+    </div>
+  );
+}

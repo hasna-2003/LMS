@@ -1,27 +1,21 @@
+import React from "react";
 
-      {/* Floating Icons Wrapper */}
-      <div className={bannerStyles.floatingIconsWrapper}>
-        {floatingIcons.map((icon, i) => (
-          <img
-            key={i}
-            src={icon.src}
-            alt={icon.alt || ""}
-            className={`${bannerStyles.floatingIcon} ${icon.pos}`}
-            style={{
-              animationDelay: `${i * 0.35}s`,
-              willChange: "transform, opacity",
-            }}
-          />
-        ))}
+const Banner = () => {
+  return (
+    <section className="bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 px-6 py-20 text-white">
+      <div className="mx-auto flex max-w-6xl flex-col items-center text-center">
+        <p className="mb-4 rounded-full border border-white/20 bg-white/10 px-4 py-1 text-sm backdrop-blur">
+          Learn with confidence
+        </p>
+        <h1 className="text-4xl font-semibold sm:text-5xl">
+          Build practical skills with world-class courses
+        </h1>
+        <p className="mt-4 max-w-2xl text-lg text-indigo-100">
+          Discover beginner-friendly, career-focused lessons that help you grow faster.
+        </p>
       </div>
+    </section>
+  );
+};
 
-      {/* Inline Animations */}
-      <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: scale(0.95); }
-          to { opacity: 1; transform: scale(1); }
-        }
-        .animate-fadeIn {
-          animation: fadeIn 0.3s ease-out forwards;
-        }
-      `}</style>
+export default Banner;
