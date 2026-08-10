@@ -1,0 +1,227 @@
+import React from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { API_BASE } from '../../config'
+import { Toaster, toast } from 'react-hot-toast'
+import bookingsStyles from './BookingsPage.module.css'
+
+const API_BASE = 'http://localhost:4000';
+
+const BookingsPage = () => {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [bookings, setBookings] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [page] = useState(1); // expose later for pagination
+  const limit = 200;
+
+  // debounce timer and abort controller
+  const debounceRef = useRef(null);
+  const abortRef = useRef(null);
+
+ const fetchBookings = async (search = "") => {
+    setLoading(true);
+    setError(null);
+
+    // abort previous
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    try {
+      const q = new URLSearchParams();
+      if (search) q.set("search", search);
+      q.set("limit", String(limit));
+      q.set("page", String(page));
+
+      const res = await fetch(`${API_BASE}/api/booking?${q.toString()}`, {
+        method: "GET",
+        signal: controller.signal,
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(
+          body.message || `Request failed with status ${res.status}`
+        );
+      }
+
+      const data = await res.json();
+      if (data && data.success) {
+        const normalized = (data.bookings || []).map((b, idx) => ({
+          id: b._id || b.bookingId || String(idx),
+          // userRef removed — use studentName field present in backend
+          studentName: b.studentName || b.userName || "Unknown student",
+          courseName: b.courseName || "Untitled course",
+          price: b.price ?? 0,
+          teacherName: b.teacherName || "Unknown teacher",
+          purchaseDate: b.createdAt
+            ? new Date(b.createdAt).toISOString().split("T")[0]
+            : b.purchaseDate || "",
+          raw: b,
+        }));
+
+        setBookings(normalized);
+      } else {
+        setBookings([]);
+        setError(data?.message || "No data");
+      }
+    } catch (err) {
+      if (err.name === "AbortError") {
+        // aborted — ignore
+      } else {
+        console.error("fetchBookings error:", err);
+        setError(err.message || "Failed to fetch bookings");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchBookings("");
+    return () => {
+      if (abortRef.current) abortRef.current.abort();
+    };
+  }, []);
+
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      fetchBookings(searchTerm.trim());
+    }, 500);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [searchTerm]);
+
+  return (
+    <div className={bookingsStyles.pageContainer}>
+      <div className={bookingsStyles.contentContainer}>
+         <div className={bookingsStyles.headerContainer}>
+          <h1 className = {bookingsStyles.headerTitle}>Course Bookings</h1>
+          <p className={bookingsStyles.headerDescription}>
+            Manage and view all course bookings.
+          </p>
+        </div>
+
+        {/* Search */}
+        <div className={bookingsStyles.searchContainer}>
+          <div className={bookingsStyles.searchInputContainer}>
+            <Search className={bookingsStyles.searchIcon} />
+          <input
+            type="text"
+            placeholder="Search by student or course name..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className={bookingsStyles.searchInput}
+          />
+          </div>
+        </div>
+
+        <div style={{
+          minHeight: 36,
+        }}>
+          {loading && (
+            <div className={bookingsStyles.loadingState}>
+              <p>Loading bookings...</p>
+            </div>
+          )}
+
+          {!loading && error && (
+            <div className={bookingsStyles.errorState}>
+              <p>Error: {error}</p>
+            </div>
+          )}
+        </div>
+
+        {/* booking grid */}
+        <div className={bookingsStyles.bookingsGrid}>
+          {!loading &&
+          bookings.map((booking) => (
+            <div key={booking.id} className={bookingsStyles.bookingCard}>
+              <div className={bookingsStyles.studentSection}>
+                <div className={bookingsStyles.studentIconCOntainer}>
+                  <User className={bookingsStyles.studentIcon} />
+                </div>
+
+                <div className={bookingsStyles.studentInfo}>
+                  <h3 className={bookingsStyles.studentName}>
+                    {booking.studentName}
+                  </h3>
+                  <p className={bookingsStyles.purchaseDate}>
+                    {booking.purchaseDate || "."}
+                  </p>
+                </div>
+              </div>
+
+              {/* course details */}
+              <div className={bookingsStyles.courseDetails}>
+                <div className={bookingsStyles.detailItem}>
+                  <strong>Course:</strong> {booking.courseName}
+                </div>
+                <div className={bookingsStyles.detailItem}>
+                  <strong>Teacher:</strong> {booking.teacherName}
+                </div>
+                <div className={bookingsStyles.detailItem}>
+                  <strong>Price:</strong> Rs{booking.price.toFixed(2)}
+                </div>
+              </div>
+
+              <div className={bookingsStyles.statusContainer}>
+                <span className={bookingsStyles.statusBadge} style={{ backgroundColor: booking.status === 'confirmed' ? '#d4edda' : '#f8d7da' }}>
+                  {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+
+        {/* no result */}
+        {!loading && bookings.length === 0 && !error && (
+          <div className={bookingsStyles.emptyState}>
+            <div className={bookingsStyles.emptyContainer}>
+              <Search className={bookingsStyles.emptyIcon} />
+              <h3 className={bookingsStyles.emptyTitle}>No bookings found.</h3>
+              <p className={bookingsStyles.emptyDescription}>
+                Try adjusting your search or check back later.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default BookingsPage;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 
