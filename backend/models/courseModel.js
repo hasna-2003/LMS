@@ -9,9 +9,8 @@ const chapterSchema = new mongoose.Schema({
   },
   totalMinutes: { type: Number, default: 0 },
   videoUrl: { type: String, required: true },
-}, { _id: true});
+}, { _id: true });
 
-//lecture schema
 const lectureSchema = new mongoose.Schema({
   title: { type: String, required: true },
   duration: {
@@ -19,8 +18,8 @@ const lectureSchema = new mongoose.Schema({
     minutes: { type: Number, default: 0 },
   },
   totalMinutes: { type: Number, default: 0 },
-  chapters: {chapterSchema},
-}, { _id: true});
+  chapters: [chapterSchema],
+}, { _id: true });
 
 const courseSchema = new mongoose.Schema(
   {
@@ -50,7 +49,9 @@ const courseSchema = new mongoose.Schema(
     },
     totalLectures: { type: Number, default: 0 },
     lectures: [lectureSchema],
-    courseType: { type: String, enum: ["regular", "top"], default: "regular" },
+    courseType: { type: String, enum: ["regular", "top", "home"], default: "regular" },
+    category: { type: String, default: null },
+    createdBy: { type: String, default: null },
   },
   { timestamps: true }
 );

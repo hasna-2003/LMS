@@ -1,6 +1,6 @@
-import Booking from "../models/Booking.js";
+import Booking from "../models/bookingModel.js";
 import stripePackage from "stripe";
-import {v4 as uuidv4} from "uuid";
+import { v4 as uuidv4 } from "uuid";
 import { getAuth } from "@clerk/express";
 import dotenv from "dotenv";
 dotenv.config();
@@ -10,9 +10,9 @@ const FRONTEND_URL = process.env.FRONTEND_URL || null;
 const stripe = STRIPE_KEY ? new stripePackage(STRIPE_KEY, { apiVersion: "2022-11-15" }) : null;
 
 // HELPER FUNCTIONS
-const setNumber = (value) => {
+const safeNumber = (value) => {
   const num = Number(value);
-  return isNaN(num) ? null : num;
+  return Number.isFinite(num) ? num : null;
 };
 
 const genBookingId = () => `BK-${uuidv4()}`;
