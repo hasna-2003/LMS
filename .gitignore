@@ -1,7 +1,10 @@
 # Environment variables
+node_modules/
 .env
 .env.*
 !.env.example
+
+backend/.env
 
 # Dependencies
 node_modules/
@@ -11,4 +14,4 @@ dist/
 build/
 
 # Logs
-*.log
+*.log"backend/.env" 
