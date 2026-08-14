@@ -5,6 +5,7 @@ node_modules/
 !.env.example
 
 backend/.env
+frontend/.env
 
 # Dependencies
 node_modules/
@@ -14,4 +15,4 @@ dist/
 build/
 
 # Logs
-*.log"backend/.env" 
+*.log
