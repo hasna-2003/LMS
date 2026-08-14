@@ -1,11 +1,8 @@
-# Environment variables
-node_modules/
+# Environment variables (Ignores .env files in root AND all subfolders)
 .env
 .env.*
+.env.local
 !.env.example
-
-backend/.env
-frontend/.env
 
 # Dependencies
 node_modules/
@@ -13,6 +10,14 @@ node_modules/
 # Build files
 dist/
 build/
+.next/
 
 # Logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# System Files
+.DS_Store
+Thumbs.db
