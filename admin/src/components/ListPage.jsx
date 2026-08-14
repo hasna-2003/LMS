@@ -1,640 +1,425 @@
-import React from 'react'
-import { listStyles } from '../../assets/dummyStyles'
-import { useState, useEffect } from 'react'
-import axios from 'axios'
-import { Toaster, toast } from 'react-hot-toast'
+import React, { useState, useMemo, useEffect } from "react";
 import {
   BookOpen,
-  Clock,
+  Search,
+  Filter,
+  Edit,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
   Eye,
-  EyeClosed,
-  Trash2
-} from 'lucide-react'
+  PlusCircle,
+  AlertCircle,
+  MoreVertical,
+} from "lucide-react";
+import { Link } from "react-router-dom";
+import { listStyles } from "../assets/dummyStyles";
 
- const [searchTerm, setSearchTerm] = useState("");
-  const [expandedCourse, setExpandedCourse] = useState(null);
-  const [expandedLectures, setExpandedLectures] = useState({});
+const API_BASE = "http://localhost:4000";
+
+// Sample Initial Courses (Replace or extend with API data)
+const INITIAL_COURSES = [
+  {
+    id: "1",
+    title: "Full-Stack Web Development Bootcamp",
+    instructor: "Alex Rivera",
+    category: "Development",
+    level: "Beginner",
+    pricingType: "paid",
+    price: 4999,
+    students: 1240,
+    status: "Active",
+    createdAt: "2026-01-15",
+  },
+  {
+    id: "2",
+    title: "UI/UX Design Masterclass 2026",
+    instructor: "Sarah Jenkins",
+    category: "Design",
+    level: "Intermediate",
+    pricingType: "paid",
+    price: 2999,
+    students: 850,
+    status: "Active",
+    createdAt: "2026-02-01",
+  },
+  {
+    id: "3",
+    title: "Introduction to Python Programming",
+    instructor: "Michael Chen",
+    category: "Development",
+    level: "Beginner",
+    pricingType: "free",
+    price: 0,
+    students: 3100,
+    status: "Active",
+    createdAt: "2025-11-20",
+  },
+  {
+    id: "4",
+    title: "Advanced React & Next.js Architecture",
+    instructor: "Alex Rivera",
+    category: "Development",
+    level: "Advanced",
+    pricingType: "paid",
+    price: 5999,
+    students: 620,
+    status: "Draft",
+    createdAt: "2026-02-10",
+  },
+  {
+    id: "5",
+    title: "Digital Marketing & SEO Fundamentals",
+    instructor: "Emma Watson",
+    category: "Marketing",
+    level: "Beginner",
+    pricingType: "paid",
+    price: 1999,
+    students: 430,
+    status: "Active",
+    createdAt: "2026-01-28",
+  },
+];
+
+const ITEMS_PER_PAGE = 4;
+
+const ListPage = () => {
   const [courses, setCourses] = useState([]);
-  const [loading, setLoading] = useState(false);
-
-  const API_BASE = "http://localhost:4000";
-
-  const ListPage = () => {
-
-  // build image url
-  const getImageUrl = (imagePath) => {
-    if (!imagePath) return "";
-    if (imagePath.startsWith("http://") || imagePath.startsWith("https://"))
-      return imagePath;
-    // If the server sends path like "/uploads/..." or "uploads/..."
-    if (imagePath.startsWith("/")) return `${API_BASE}${imagePath}`;
-    if (imagePath.includes("/uploads/"))
-      return `${API_BASE}/${imagePath}`.replace(/\/\/+/g, "/");
-    return `${API_BASE}/uploads/${imagePath}`;
-  };
-
-  //pasre duration into total minutes
-   const parseDuration = (v) => {
-    if (v == null) return 0;
-
-    // number -> assume minutes
-    if (typeof v === "number" && Number.isFinite(v))
-      return Math.max(0, Math.floor(v));
-
-    // String -> try "1h 20m" or "80m" or plain number string
-    if (typeof v === "string") {
-      const s = v.trim();
-      // match hours and minutes like "1h 20m" or "1 h 20 m"
-      const hMatch = s.match(/(\d+)\s*h/i);
-      const mMatch = s.match(/(\d+)\s*m/i);
-      let total = 0;
-      if (hMatch) total += parseInt(hMatch[1], 10) * 60;
-      if (mMatch) total += parseInt(mMatch[1], 10);
-      if (total > 0) return total;
-      // maybe it's just a plain number in minutes
-      const plain = parseInt(s.replace(/[^\d-]/g, ""), 10);
-      if (Number.isFinite(plain)) return Math.max(0, plain);
-      // ISO-ish fallback: try PT#M / PT#H#M
-      const isoHM = s.match(/PT(?:(\d+)H)?(?:(\d+)M)?/i);
-      if (isoHM) {
-        const h = Number(isoHM[1] || 0);
-        const m = Number(isoHM[2] || 0);
-        return h * 60 + m;
-      }
-      return 0;
-    }
-
-    // Object -> check known fields
-    if (typeof v === "object") {
-      // nested duration: { duration: { hours, minutes } }
-      if (v.duration) return parseDuration(v.duration);
-
-      if ("totalMinutes" in v && Number.isFinite(Number(v.totalMinutes))) {
-        return Math.max(0, Math.floor(Number(v.totalMinutes)));
-      }
-      if ("minutes" in v && "hours" in v) {
-        const hrs = Number(v.hours) || 0;
-        const mins = Number(v.minutes) || 0;
-        return Math.max(0, Math.floor(hrs * 60 + mins));
-      }
-      if ("hours" in v || "mins" in v || "min" in v) {
-        const hrs = Number(v.hours) || 0;
-        const mins = Number(v.minutes || v.mins || v.min) || 0;
-        return Math.max(0, Math.floor(hrs * 60 + mins));
-      }
-      if ("minutes" in v) {
-        return Math.max(0, Math.floor(Number(v.minutes) || 0));
-      }
-      // sometimes backend may send { length: 80 } or { durationMin: 80 }
-      if ("durationMin" in v && Number.isFinite(Number(v.durationMin))) {
-        return Math.max(0, Math.floor(Number(v.durationMin)));
-      }
-      if ("length" in v && Number.isFinite(Number(v.length))) {
-        return Math.max(0, Math.floor(Number(v.length)));
-      }
-    }
-
-    return 0;
-  };
-
-  // Format minutes into consistent string like "1h 20m" or "45m"
-  const formatMinutes = (mins) => {
-    const m = Math.max(0, Math.floor(Number(mins) || 0));
-    const h = Math.floor(m / 60);
-    const rem = m % 60;
-    if (h === 0) return `${rem}m`;
-    if (rem === 0) return `${h}h`;
-    return `${h}h ${rem}m`;
-  };
-
-  
-  // normalize ID (not strictly required but handy)
-  const getId = (c) => (c && (c._id ? c._id : c.id)) || null;
-
-  // Robust fetch that handles variations: array | { items: [...] } | { courses: [...] }
-  const fetchCourses = async () => {
-    setLoading(true);
-    try {
-      const res = await axios.get(`${API_BASE}/api/course/public`);
-      let raw = res.data;
-      if (raw && raw.data) raw = raw.data;
-
-      let arr = Array.isArray(raw)
-        ? raw
-        : Array.isArray(raw.items)
-        ? raw.items
-        : Array.isArray(raw.courses)
-        ? raw.courses
-        : [];
-
-      // Defensive nested case
-      if (!Array.isArray(arr) && raw.items && Array.isArray(raw.items.items)) {
-        arr = raw.items.items;
-      }
-
-      if (!Array.isArray(arr)) arr = [];
-
-      const mapped = arr.map((c) => {
-        const id = c._id || c.id;
-        const imageUrl = c.image || c.img || c.thumbnail || "";
-        const finalImage = getImageUrl(imageUrl);
-
-        // lectures array variations
-        const lecturesArr = c.courseLectures || c.lectures || c.contents || [];
-
-        // price could be object or primitive
-        const isPriceObject = typeof c.price === "object" && c.price !== null;
-        const salePrice = isPriceObject ? c.price.sale : c.price;
-        const originalPrice = isPriceObject
-          ? c.price.original
-          : c.originalPrice;
-
-        // totalDuration variations -> compute minutes
-        const totalDurationRaw =
-          c.totalDuration || c.duration || c.totalDurationObj || null;
-        const totalDurationMinutes = parseDuration(totalDurationRaw);
-
-        // ensure each lecture/chapter durations normalized too (not altering original shape but helpful)
-        const normalizedLectures = Array.isArray(lecturesArr)
-          ? lecturesArr.map((lec) => ({
-              ...lec,
-              _parsedDurationMinutes:
-                lec.durationMin ??
-                lec.totalMinutes ??
-                parseDuration(lec.duration) ??
-                0,
-              chapters: Array.isArray(lec.chapters)
-                ? lec.chapters.map((ch) => ({
-                    ...ch,
-                    _parsedDurationMinutes:
-                      ch.durationMin ??
-                      ch.totalMinutes ??
-                      parseDuration(ch.duration) ??
-                      0,
-                  }))
-                : [],
-            }))
-          : [];
-
-        return {
-          ...c,
-          id,
-          name: c.name || c.title || "Untitled Course",
-          instructor: c.teacher || c.instructor || "Unknown Instructor",
-          image: finalImage,
-          rating: typeof c.rating !== "undefined" ? c.rating : 0,
-          lectures: Array.isArray(lecturesArr) ? lecturesArr.length : 0,
-          courseLectures: normalizedLectures,
-          description:
-            c.description || c.desc || c.overview || "No description provided.",
-          courseType: c.courseType || c.type || "regular",
-          price: salePrice ?? 0,
-          originalPrice: originalPrice ?? salePrice ?? 0,
-          isFree:
-            !!c.isFree ||
-            salePrice === 0 ||
-            salePrice === "0" ||
-            (typeof salePrice === "string" &&
-              salePrice.toLowerCase() === "free"),
-          totalDurationMinutes,
-        };
-      });  
-
-      setCourses(mapped);
-    } catch (err) {
-      console.error("Failed to fetch courses", err);
-      toast.error("Failed to load courses. Check server or network.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [searchTerm, setSearchTerm] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("All");
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [sortBy, setSortBy] = useState("newest");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [deleteId, setDeleteId] = useState(null);
 
   useEffect(() => {
-    fetchCourses();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const loadCourses = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/course`);
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+          const mapped = (data.courses || []).map((course) => ({
+            id: course._id,
+            title: course.name || "Untitled Course",
+            instructor: course.teacher || "Unknown",
+            category: course.category || "General",
+            level: course.level || "Beginner",
+            pricingType: course.pricingType || "free",
+            price:
+              course.price?.sale != null
+                ? Number(course.price.sale)
+                : course.price?.original != null
+                  ? Number(course.price.original)
+                  : 0,
+            students: course.students || course.totalRatings || 0,
+            status: "Active",
+            createdAt: course.createdAt || new Date().toISOString(),
+          }));
+
+          setCourses(mapped.length ? mapped : INITIAL_COURSES);
+          return;
+        }
+      } catch (error) {
+        console.error("Failed to load courses from API:", error);
+      }
+
+      setCourses(INITIAL_COURSES);
+    };
+
+    loadCourses();
   }, []);
 
-// filter by name 
-const filteredCourses = courses.filter((course) => {
-    const t = searchTerm.trim().toLowerCase();
-    if (!t) return true;
-    return (
-      (course.name || "").toLowerCase().includes(t) ||
-      (course.instructor || "").toLowerCase().includes(t) ||
-      (course.category || "").toLowerCase().includes(t)
-    );
-  });
+  // Filter & Sort Logic
+  const filteredCourses = useMemo(() => {
+    return courses
+      .filter((course) => {
+        const matchesSearch =
+          course.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          course.instructor.toLowerCase().includes(searchTerm.toLowerCase());
 
-  const toggleCourseDetails = (courseId) => {
-    setExpandedCourse(expandedCourse === courseId ? null : courseId);
-    if (expandedCourse === courseId) {
-      // collapsing: clear lecture expansions for this course
-      setExpandedLectures((prev) => {
-        const newState = { ...prev };
-        Object.keys(newState).forEach((key) => {
-          if (key.startsWith(`${courseId}-`)) delete newState[key];
-        });
-        return newState;
+        const matchesCategory =
+          categoryFilter === "All" || course.category === categoryFilter;
+
+        const matchesStatus =
+          statusFilter === "All" || course.status === statusFilter;
+
+        return matchesSearch && matchesCategory && matchesStatus;
+      })
+      .sort((a, b) => {
+        if (sortBy === "newest") return new Date(b.createdAt) - new Date(a.createdAt);
+        if (sortBy === "oldest") return new Date(a.createdAt) - new Date(b.createdAt);
+        if (sortBy === "students") return b.students - a.students;
+        if (sortBy === "price") return b.price - a.price;
+        return 0;
       });
-    }
+  }, [courses, searchTerm, categoryFilter, statusFilter, sortBy]);
+
+  // Pagination Logic
+  const totalPages = Math.ceil(filteredCourses.length / ITEMS_PER_PAGE) || 1;
+  const paginatedCourses = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredCourses.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredCourses, currentPage]);
+
+  const handleDelete = (id) => {
+    setCourses((prev) => prev.filter((item) => item.id !== id));
+    setDeleteId(null);
   };
 
-  const toggleLectureDetails = (courseId, lectureId) => {
-    const key = `${courseId}-${lectureId}`;
-    setExpandedLectures((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
-
-
- 
-  // DELETE without auth headers
-  const handleRemoveCourse = async (courseId, courseName) => {
-    if (
-      !window.confirm(`Delete course "${courseName}"? This cannot be undone.`)
-    )
-      return;
-
-    const prev = [...courses];
-    setCourses((c) => c.filter((x) => x.id !== courseId));
-
-    try {
-      await axios.delete(`${API_BASE}/api/course/${courseId}`);
-      toast.success(`"${courseName}" has been removed successfully!`, {
-        duration: 3000,
-        style: { background: "#ef4444", color: "white" },
-        icon: "🗑️",
-      });
-    } catch (err) {
-      console.error("Delete failed:", err);
-      setCourses(prev); // rollback
-      if (err.response && err.response.status === 401) {
-        toast.error("Unauthorized: server requires authentication to delete.");
-      } else {
-        toast.error("Failed to delete course. Try again.");
-      }
-    }
-  };
-
-  const StarRating = ({ rating }) => {
-    const rounded = Math.round((rating || 0) * 2) / 2;
-    const fullStars = Math.floor(rounded);
-    const hasHalf = rounded % 1 !== 0;
-    const emptyStars = 5 - fullStars - (hasHalf ? 1 : 0);
-
-    return (
-      <div className={listStyles.starRating}>
-        {Array.from({ length: fullStars }).map((_, i) => (
-          <Star key={`full-${i}`} className={listStyles.starFull} />
-        ))}
-        {hasHalf && <StarHalf className={listStyles.starHalf} />}
-        {Array.from({ length: emptyStars }).map((_, i) => (
-          <Star key={`empty-${i}`} className={listStyles.starEmpty} />
-        ))}
-      </div>
-    );
-  };
-
-   return (
-    <div className={listStyles.listPageContainer}>
-      <Toaster position="top-right"/>
-      <div className={listStyles.contentContainer}>
-        <div className={listStyles.headerContainer}>
-          <h1 className={listStyles.headerTitle}>Course Caralog</h1>
-          <p className={listStyles.headerDescription}>
-            Browse our collection of courses
-          </p>
+  return (
+    <div className="min-h-screen bg-slate-900 text-slate-100 px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
+      <div className="w-full space-y-6">
+        
+        {/* Header Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-5">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white flex items-center gap-2">
+              <BookOpen className="h-7 w-7 text-indigo-500" /> Course Catalog
+            </h1>
+            <p className="text-slate-400 text-sm mt-1">
+              Manage existing courses, publish drafts, and track student enrollments.
+            </p>
+          </div>
+          <Link
+            to="/addcourse"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition shadow-lg shadow-indigo-600/20"
+          >
+            <PlusCircle className="h-4 w-4" /> Add New Course
+          </Link>
         </div>
 
-        <div className={listStyles.searchContainer}>
-          <div className={listStyles.searchIconContainer}>
-          <div className={listStyles.searchInputContainer}>
+        {/* Filter and Control Toolbar */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-slate-800/60 p-4 rounded-2xl border border-slate-700/50 backdrop-blur-sm">
+          
+          {/* Search Box */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Search courses..."
+              placeholder="Search by title or instructor..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className={listStyles.searchInput}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full pl-9 pr-3 py-2 bg-slate-900/80 border border-slate-700 rounded-xl text-xs sm:text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
             />
           </div>
-         </div>
 
-         <div className={listStyles.courseList}>
-          { loading && (
-            <div className={listStyles.emptyText}>Loading courses...</div>
-          )}
-  {!loading &&
-            filteredCourses.map((course) => (
-              <div key={course.id} className={listStyles.courseCard}>
-                <div className={listStyles.courseCardContent}>
-                  <div className={listStyles.courseHeader}>
-                    <div className={listStyles.courseImageContainer}>
-                      <img
-                        src={course.image}
-                        alt={course.name}
-                        className={listStyles.courseImage}
-                      />
-                      <div className={listStyles.courseInfo}>
-                        <div className={listStyles.courseTitleRow}>
-                          <div className="flex-1 min-w-0">
-                            <h3 className={listStyles.courseTitle}>
-                              {course.name}
-                            </h3>
-                            <p className={listStyles.courseInstructor}>
-                              {course.instructor}
-                            </p>
-                          </div>
+          {/* Category Filter */}
+          <div className="relative">
+            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <select
+              value={categoryFilter}
+              onChange={(e) => {
+                setCategoryFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full pl-9 pr-3 py-2 bg-slate-900/80 border border-slate-700 rounded-xl text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition appearance-none"
+            >
+              <option value="All">All Categories</option>
+              <option value="Development">Development</option>
+              <option value="Design">Design</option>
+              <option value="Marketing">Marketing</option>
+            </select>
+          </div>
 
-                          <span
-                            className={listStyles.courseBadge(
-                              course.courseType
-                            )}
-                            aria-label={`Course type: ${
-                              course.courseType === "top"
-                                ? "Top Course"
-                                : "Regular Course"
-                            }`}
-                            title={
-                              course.courseType === "top"
-                                ? "Top Course"
-                                : "Regular Course"
-                            }
-                          >
-                            {course.courseType === "top"
-                              ? "Top Course"
-                              : "Regular Course"}
-                          </span>
-                        </div>
+          {/* Status Filter */}
+          <div>
+            <select
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full px-3 py-2 bg-slate-900/80 border border-slate-700 rounded-xl text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition"
+            >
+              <option value="All">All Statuses</option>
+              <option value="Active">Active</option>
+              <option value="Draft">Draft</option>
+            </select>
+          </div>
 
-                        <div className={listStyles.courseMeta}>
-                          <div className={listStyles.metaItem}>
-                            <BookOpen className={listStyles.metaIcon} />
-                            <span>{course.lectures} lectures</span>
-                          </div>
-                          <div className={listStyles.metaItem}>
-                            <Clock className={listStyles.metaIcon} />
-                            <span>
-                              {formatMinutes(course.totalDurationMinutes)}
-                            </span>
-                          </div>
-                          <StarRating rating={course.rating} />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className={listStyles.courseActions}>
-                      <div className={listStyles.priceContainer}>
-                        <div className="flex items-center gap-1 sm:gap-2">
-                          {course.isFree ? (
-                            <span className={listStyles.priceFree}>Free</span>
-                          ) : (
-                            <>
-                              <span className={listStyles.priceRegular}>
-                                {course.price}
-                              </span>
-                              {course.originalPrice && (
-                                <span className={listStyles.originalPrice}>
-                                  {course.originalPrice}
-                                </span>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className={listStyles.actionButtons}>
-                        <button
-                          onClick={() => toggleCourseDetails(course.id)}
-                          className={listStyles.toggleButton}
-                          aria-label={
-                            expandedCourse === course.id
-                              ? "Hide course details"
-                              : "Show course details"
-                          }
-                        >
-                          {expandedCourse === course.id ? (
-                            <Eye className={listStyles.actionIcon} />
-                          ) : (
-                            <EyeClosed className={listStyles.actionIcon} />
-                          )}
-                        </button>
-
-                        <button
-                          onClick={() =>
-                            handleRemoveCourse(course.id, course.name)
-                          }
-                          className={listStyles.deleteButton}
-                          aria-label={`Remove course: ${course.name}`}
-                        >
-                          <Trash2 className={listStyles.actionIcon} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {expandedCourse === course.id && (
-                  <div className={listStyles.expandedCourse}>
-                    <div className={listStyles.descriptionSection}>
-                      <h4 className={listStyles.descriptionTitle}>
-                        Course Description
-                      </h4>
-                      <p className={listStyles.descriptionText}>
-                        {course.description}
-                      </p>
-                    </div>
-
-                    <div>
-                      <h4 className={listStyles.descriptionTitle}>
-                        Course Content
-                      </h4>
-                      <div className={listStyles.contentSection}>
-                        {(course.courseLectures || []).map((lecture) => (
-                          <div
-                            key={lecture.id || lecture._id}
-                            className={listStyles.lectureCard}
-                          >
-                            <div className={listStyles.lectureHeader}>
-                              <button
-                                onClick={() =>
-                                  toggleLectureDetails(
-                                    course.id,
-                                    lecture.id || lecture._id
-                                  )
-                                }
-                                className={listStyles.lectureToggleButton}
-                              >
-                                <div className={listStyles.lectureInfo}>
-                                  <div className="flex-1 min-w-0">
-                                    <h5 className={listStyles.lectureTitle}>
-                                      {lecture.title}
-                                    </h5>
-                                    <div className={listStyles.lectureMeta}>
-                                      <div className={listStyles.metaItem}>
-                                        <Video
-                                          className={listStyles.metaIcon}
-                                        />
-                                        <span>
-                                          {(lecture.chapters || []).length}{" "}
-                                          chapters
-                                        </span>
-                                      </div>
-                                      <div className={listStyles.metaItem}>
-                                        <Clock
-                                          className={listStyles.metaIcon}
-                                        />
-                                        <span>
-                                          {formatMinutes(
-                                            lecture._parsedDurationMinutes ??
-                                              parseDuration(lecture.duration)
-                                          )}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                <EyeClosed
-                                  className={listStyles.lectureToggleIcon(
-                                    expandedLectures[
-                                      `${course.id}-${
-                                        lecture.id || lecture._id
-                                      }`
-                                    ]
-                                  )}
-                                />
-                              </button>
-                            </div>
-
-                            {expandedLectures[
-                              `${course.id}-${lecture.id || lecture._id}`
-                            ] && (
-                              <div className={listStyles.expandedLecture}>
-                                <div className={listStyles.chapterList}>
-                                  {(lecture.chapters || []).map((chapter) => (
-                                    <div
-                                      key={chapter.id || chapter._id}
-                                      className={listStyles.chapterCard}
-                                    >
-                                      <div
-                                        className={listStyles.chapterContent}
-                                      >
-                                        <div
-                                          className={listStyles.chapterHeader}
-                                        >
-                                          <div
-                                            className={listStyles.chapterIcon}
-                                          >
-                                            <Eye
-                                              className={
-                                                listStyles.chapterIconSvg
-                                              }
-                                            />
-                                          </div>
-                                          <div
-                                            className={
-                                              listStyles.chapterDetails
-                                            }
-                                          >
-                                            <a
-                                              href={chapter.videoUrl}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className={
-                                                listStyles.chapterTitle
-                                              }
-                                            >
-                                              <h6>{chapter.name}</h6>
-                                            </a>
-                                            <p
-                                              className={
-                                                listStyles.chapterTopic
-                                              }
-                                            >
-                                              {chapter.topic}
-                                            </p>
-
-                                            <div
-                                              className={listStyles.chapterMeta}
-                                            >
-                                              <span
-                                                className={
-                                                  listStyles.chapterDuration
-                                                }
-                                              >
-                                                <Clock className="w-3 h-3" />
-                                                {formatMinutes(
-                                                  chapter._parsedDurationMinutes ??
-                                                    parseDuration(
-                                                      chapter.duration
-                                                    )
-                                                )}
-                                              </span>
-                                              <a
-                                                href={chapter.videoUrl}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className={
-                                                  listStyles.chapterVideoLink
-                                                }
-                                              >
-                                                {chapter.videoUrl}
-                                              </a>
-                                            </div>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}   
-
-            {/* till is the UI */}
-
-            {!loading && filteredCourses.length === 0 && (
-              <div className={listStyles.emptyStateContainer}>
-                <Search className={listStyles.emptyStateIcon} />
-              <p className={listStyles.emptyText}>
-                No courses found matching your search.
-              </p>
-
-              <button onClick={() => setSearchTerm('')} className={listStyles.clearSearchButton}
-                >
-                Clear Search
-              </button>
-            </div>
-            )}
+          {/* Sort By */}
+          <div>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-900/80 border border-slate-700 rounded-xl text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition"
+            >
+              <option value="newest">Sort by: Newest</option>
+              <option value="oldest">Sort by: Oldest</option>
+              <option value="students">Sort by: Top Enrolled</option>
+              <option value="price">Sort by: Highest Price</option>
+            </select>
           </div>
         </div>
+
+        {/* Course Data Table */}
+        <div className="bg-slate-800/40 rounded-2xl border border-slate-700/60 overflow-hidden shadow-xl">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-800/80 border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wider">
+                  <th className="py-3.5 px-4 font-semibold">Course Details</th>
+                  <th className="py-3.5 px-4 font-semibold">Category</th>
+                  <th className="py-3.5 px-4 font-semibold">Price</th>
+                  <th className="py-3.5 px-4 font-semibold">Students</th>
+                  <th className="py-3.5 px-4 font-semibold">Status</th>
+                  <th className="py-3.5 px-4 font-semibold text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800 text-sm">
+                {paginatedCourses.length > 0 ? (
+                  paginatedCourses.map((course) => (
+                    <tr key={course.id} className="hover:bg-slate-800/50 transition">
+                      
+                      {/* Course Title & Instructor */}
+                      <td className="py-4 px-4">
+                        <div>
+                          <p className="font-semibold text-white hover:text-indigo-400 transition cursor-pointer">
+                            {course.title}
+                          </p>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            By {course.instructor} • <span className="text-slate-500">{course.level}</span>
+                          </p>
+                        </div>
+                      </td>
+
+                      {/* Category */}
+                      <td className="py-4 px-4">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-slate-700/50 text-slate-300 border border-slate-600/50">
+                          {course.category}
+                        </span>
+                      </td>
+
+                      {/* Price */}
+                      <td className="py-4 px-4 font-medium text-slate-200">
+                        {course.pricingType === "free" ? (
+                          <span className="text-emerald-400 font-semibold">Free</span>
+                        ) : (
+                          `Rs. ${course.price.toLocaleString()}`
+                        )}
+                      </td>
+
+                      {/* Students */}
+                      <td className="py-4 px-4 text-slate-300">
+                        {course.students.toLocaleString()}
+                      </td>
+
+                      {/* Status Badge */}
+                      <td className="py-4 px-4">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
+                            course.status === "Active"
+                              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                              : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                          }`}
+                        >
+                          {course.status}
+                        </span>
+                      </td>
+
+                      {/* Action Buttons */}
+                      <td className="py-4 px-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            title="Preview Course"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/60 transition"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                          <button
+                            title="Edit Course"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-400 hover:bg-slate-700/60 transition"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button>
+                          <button
+                            title="Delete Course"
+                            onClick={() => setDeleteId(course.id)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-700/60 transition"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-slate-400">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <AlertCircle className="h-8 w-8 text-slate-500" />
+                        <p className="text-base font-medium">No courses found</p>
+                        <p className="text-xs text-slate-500">
+                          Try adjusting your search criteria or clear active filters.
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination Controls */}
+          {filteredCourses.length > 0 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-slate-800 bg-slate-900/40 text-xs sm:text-sm text-slate-400">
+              <p>
+                Showing Page <span className="font-semibold text-white">{currentPage}</span> of{" "}
+                <span className="font-semibold text-white">{totalPages}</span>
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                  className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <button
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                  className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <h3 className="text-lg font-bold text-white">Confirm Course Deletion</h3>
+            <p className="text-sm text-slate-300">
+              Are you sure you want to delete this course? This action cannot be undone and will affect all registered metrics.
+            </p>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setDeleteId(null)}
+                className="px-4 py-2 bg-slate-700 text-slate-300 rounded-xl text-xs sm:text-sm hover:bg-slate-600 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDelete(deleteId)}
+                className="px-4 py-2 bg-rose-600 text-white rounded-xl text-xs sm:text-sm hover:bg-rose-500 transition shadow-lg shadow-rose-600/20"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-  )
-}
- 
+  );
+};
 
 export default ListPage;
-
-
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
-
-
-
- 
-
-        

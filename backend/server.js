@@ -1,63 +1,37 @@
 import express from "express";
-import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
+import connectDB from "./config/db.js";
 
-// Load environment variables
+// Import Routers
+import bookingRouter from "./routes/bookingRouter.js";
+import courseRouter from "./routes/courseRouter.js";
+
+import dns from 'node:dns';
+dns.setServers(['8.8.8.8', '8.8.4.4']);
+// Load Environment Variables
 dotenv.config();
-
-const app = express();
-
-// Middleware
-app.use(cors());
-app.use(express.json());
-
-// Check environment variables
-console.log("Environment variables loaded");
-
-if (!process.env.MONGODB_URI) {
-    console.error("ERROR: MONGODB_URI is not defined in .env");
-    process.exit(1);
-}
-
-// MongoDB connection
-const connectDB = async () => {
-    try {
-        await mongoose.connect(process.env.MONGODB_URI);
-
-        console.log("MongoDB connected successfully");
-        console.log("Database:", mongoose.connection.name);
-    } catch (error) {
-        console.error("MongoDB connection failed:");
-        console.error(error.message);
-    }
-};
 
 // Connect to MongoDB
 connectDB();
 
-// Test route
+const app = express();
+
+// Middleware
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use(cors());
+
+// Routes
+app.use("/api/booking", bookingRouter);
+app.use("/api/course", courseRouter);
+
 app.get("/", (req, res) => {
-    res.json({
-        success: true,
-        message: "LMS Backend is running"
-    });
+  res.send("API is running...");
 });
 
-// Health check
-app.get("/api/health", (req, res) => {
-    res.json({
-        server: "running",
-        mongodb:
-            mongoose.connection.readyState === 1
-                ? "connected"
-                : "disconnected"
-    });
-});
-
-// Server port
-const PORT = process.env.PORT || 5000;
-
+// Start Server
+const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });

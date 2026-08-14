@@ -1,14 +1,8 @@
-import React from 'react'
-import Navbar from '../components/Navbar/Navbar'
-import ListPage from '../components/ListPage/ListPage'
+import React from "react";
+import ListPage from "../components/ListPage";
 
 const List = () => {
-  return (
-    <div>
-      <Navbar />
-      <ListPage />
-    </div>
-  )
-}
+  return <ListPage />;
+};
 
-export default List
+export default List;

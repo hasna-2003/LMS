@@ -1,7 +1,8 @@
-import React from 'react';
+import React from "react";
+import BookingsPage from "../components/BookingsPage";
 
 const Bookings = () => {
-  return <div className="p-6">Bookings page coming soon.</div>;
+  return <BookingsPage />;
 };
 
 export default Bookings;

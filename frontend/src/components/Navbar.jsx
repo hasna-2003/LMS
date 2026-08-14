@@ -22,27 +22,27 @@ const Navbar = () => {
 
   return (
     <nav className="fixed inset-x-0 top-0 z-50 border-b border-slate-200/80 bg-white/90 backdrop-blur-md transition-all">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8 h-16">
+      <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-2 px-4 sm:px-6 lg:px-8 h-16">
         
         {/* Brand Logo */}
-        <Link to="/" className="flex items-center gap-2.5 group">
+        <Link to="/" className="flex items-center gap-2 group">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-500/20 group-hover:scale-105 transition-transform duration-200">
             <GraduationCap className="h-5 w-5" />
           </div>
-          <span className="text-xl font-bold tracking-tight text-slate-900">
+          <span className="text-lg sm:text-xl font-bold tracking-tight text-slate-900">
             Learn<span className="text-indigo-600">Hub</span>
           </span>
         </Link>
 
         {/* Desktop Navigation Links */}
-        <div className="hidden md:flex items-center gap-1 lg:gap-2">
+        <div className="hidden md:flex items-center gap-0.5 lg:gap-1">
           {links.map((link) => {
             const isActive = location.pathname === link.href;
             return (
               <Link
                 key={link.name}
                 to={link.href}
-                className={`px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
+                className={`px-2.5 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
                   isActive
                     ? "text-indigo-600 bg-indigo-50/80 font-semibold"
                     : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/80"
@@ -55,17 +55,17 @@ const Navbar = () => {
         </div>
 
         {/* Right CTA Actions */}
-        <div className="hidden md:flex items-center gap-3">
+        <div className="hidden md:flex items-center gap-1.5">
           <Link
             to="/login"
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-slate-700 hover:text-indigo-600 transition-colors"
+            className="inline-flex items-center gap-1.5 px-2.5 py-2 text-sm font-medium text-slate-700 hover:text-indigo-600 transition-colors rounded-lg hover:bg-slate-100"
           >
             <User className="h-4 w-4" />
             <span>Sign In</span>
           </Link>
           <Link
             to="/register"
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm hover:shadow-md hover:shadow-indigo-200 transition-all active:scale-95"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm hover:shadow-md hover:shadow-indigo-200 transition-all active:scale-95"
           >
             <span>Get Started</span>
             <ArrowRight className="h-4 w-4" />

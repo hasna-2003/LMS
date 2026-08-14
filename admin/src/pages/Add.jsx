@@ -1,16 +1,8 @@
-import React from 'react'
-import Navbar from '../components/Navbar/Navbar'
-import AddPage from '../components/AddPage/AddPage'
+import React from "react";
+import AddPage from "../components/AddPage";
 
 const Add = () => {
-  return (
-    <div>
-      <Navbar />
-      <AddPage />
-    </div>
-  )
-}
+  return <AddPage />;
+};
 
-export default Add
-
-
+export default Add;

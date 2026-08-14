@@ -7,7 +7,7 @@ import {
   Search,
   X,
   Mail,
-  Linkedin,
+  Globe,
   Twitter,
   Award,
 } from "lucide-react";
@@ -333,7 +333,7 @@ const FacultyPage = () => {
                 <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
                   <div className="flex gap-3 text-slate-400">
                     <Mail className="w-5 h-5 hover:text-indigo-600 cursor-pointer transition-colors" />
-                    <Linkedin className="w-5 h-5 hover:text-indigo-600 cursor-pointer transition-colors" />
+                    <Globe className="w-5 h-5 hover:text-indigo-600 cursor-pointer transition-colors" />
                     <Twitter className="w-5 h-5 hover:text-indigo-600 cursor-pointer transition-colors" />
                   </div>
                   <button

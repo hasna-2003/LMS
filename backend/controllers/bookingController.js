@@ -1,312 +1,287 @@
 import Booking from "../models/bookingModel.js";
-import stripePackage from "stripe";
-import { v4 as uuidv4 } from "uuid";
-import { getAuth } from "@clerk/express";
-import dotenv from "dotenv";
-dotenv.config();
+import Course from "../models/courseModel.js";
 
-const STRIPE_KEY = process.env.STRIPE_SECRET_KEY;
-const FRONTEND_URL = process.env.FRONTEND_URL || null;
-const stripe = STRIPE_KEY ? new stripePackage(STRIPE_KEY, { apiVersion: "2022-11-15" }) : null;
-
-// HELPER FUNCTIONS
-const safeNumber = (value) => {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : null;
-};
-
-const genBookingId = () => `BK-${uuidv4()}`;
-
-// for image 
-function buildFrontendBase(req) {
-  if (FRONTEND_URL) return FRONTEND_URL.replace(/\/$/, "");
-  const origin = req.get("origin");
-  if (origin) return origin.replace(/\/$/, "");
-  const host = req.get("host");
-  if (host) return `${req.protocol || "http"}://${host}`.replace(/\/$/, "");
-  return null;
-}
-
-// get bookings
+/**
+ * @desc    Get all bookings (Admin list)
+ * @route   GET /api/booking/
+ * @access  Admin
+ */
 export const getBookings = async (req, res) => {
   try {
-    const {search = "", status ,limit:limitRaw = 50, page: pageRaw = 1 } = req.query;
-    const limit = Math.min(200, Math.max(1, parseInt(limitRaw, 10) || 50));
-    const page = Math.max(1, parseInt(pageRaw,10) || 1);
-    const skip = (page - 1) * limit;
-
-    const filter = {};
-
-    if (status) {
-      filter.orderStatus = status;
-    }
-    
-    if (search) {
-      const re = new RegExp(search, "i");
-      filter.$or = [
-        { bookingId: re },
-        { studentName: re },
-        { courseName: re },
-        { teacherName: re },
-      ];
-    }
-
-    const items = await Booking.find(filter).sort({createdAt: -1}).skip(skip).limit(limit).lean();
-    return res.json({ success: true, bookings: items, meta: {page, limit, count: items.length} 
-    });
-
-  } catch (err) {
-    console.error('getBookings:', err);
-    return res.status(500).json({ success: false, message: "Server error" })
-  }
-}
-
-
-/* ---------------- Authenticated: createBooking ----------------
-   - requires Clerk session (getAuth)
-*/
-export const createBooking = async (req, res) => {
-  try {
-    const { userId } = getAuth(req) || {};
-    if (!userId) return res.status(401).json({ success: false, message: "Authentication required" });
-
-    const {
-      courseId,
-      courseName,
-      teacherName = "",
-      price,
-      notes = "",
-      email,
-      studentName,
-    } = req.body;
-
-    if (!courseId || !courseName) return res.status(400).json({ success: false, message: "courseId and courseName required" });
-
-    const numericPrice = safeNumber(price);
-    if (numericPrice === null || numericPrice < 0) return res.status(400).json({ success: false, message: "price must be a valid number" });
-
-    const bookingId = genBookingId();
-
-    const resolvedStudentName = (studentName && String(studentName).trim()) ||
-      (email && String(email).trim()) ||
-      `User-${String(userId).slice(0, 8)}`;
-
-    const basePayload = {
-      bookingId,
-      clerkUserId: userId,
-      studentName: resolvedStudentName,
-      course: courseId,
-      courseName,
-      teacherName,
-      price: numericPrice,
-      paymentMethod: "Online",
-      paymentStatus: "Unpaid",
-      notes,
-      orderStatus: "Pending",
-      createdAt: new Date(),
-    };
-
-    // Free course: create booking and mark as paid/confirmed immediately (also set paidAt)
-    if (numericPrice === 0) {
-      const booking = await Booking.create({
-        ...basePayload,
-        paymentStatus: "Paid",
-        orderStatus: "Confirmed",
-        paidAt: new Date(), // <-- mark paid time so frontend can rely on it
-      });
-      return res.status(201).json({ success: true, booking, checkoutUrl: null });
-    }
-
-    // For paid courses, require Stripe
-    if (!stripe) {
-      return res.status(500).json({ success: false, message: "Stripe not configured on server" });
-    }
-
-    const base = buildFrontendBase(req);
-    if (!base) {
-      return res.status(500).json({
-        success: false,
-        message: "Frontend URL not determined. Set FRONTEND_URL or send an Origin header.",
-      });
-    }
-
-    const successUrl = `${base}/booking/success?session_id={CHECKOUT_SESSION_ID}`;
-    const cancelUrl = `${base}/booking/cancel`;
-
-    let session;
-    try {
-      session = await stripe.checkout.sessions.create({
-        payment_method_types: ["card"],
-        mode: "payment",
-        customer_email: email || undefined,
-        line_items: [
-          {
-            price_data: {
-              currency: "inr",
-              product_data: { name: courseName },
-              unit_amount: Math.round(numericPrice * 100),
-            },
-            quantity: 1,
-          },
-        ],
-        success_url: successUrl,
-        cancel_url: cancelUrl,
-        metadata: { bookingId, courseId, clerkUserId: userId, studentName: resolvedStudentName },
-      });
-    } catch (stripeErr) {
-      console.error("Stripe create session error:", stripeErr);
-      const message = stripeErr?.raw?.message || stripeErr?.message || "Stripe error";
-      return res.status(502).json({ success: false, message: `Payment provider error: ${message}` });
-    }
-
-    try {
-      const booking = await Booking.create({
-        ...basePayload,
-        sessionId: session.id,
-        paymentIntentId: session.payment_intent || null,
-      });
-      return res.status(201).json({ success: true, booking, checkoutUrl: session.url || null });
-    } catch (dbErr) {
-      console.error("DB error saving booking after stripe session:", dbErr);
-      return res.status(500).json({ success: false, message: "Failed to create booking record" });
-    }
-  } catch (err) {
-    console.error("createBooking unexpected:", err);
-    return res.status(500).json({ success: false, message: "Server error" });
-  }
-}
-
-// we also need to check for the booking as a user has already enrolled in the course or not
-export const checkBooking = async (req, res) => {
-  try {
-    const { userId } = getAuth(req) || {};
-    if (!userId) {
-      return res.status(200).json({ 
-        success: false, 
-        enrolled: false ,
-        booking: null 
-      });
-    }
-
-    const { courseId } = req.query;
-    if (!courseId) {
-      return res.status(400).json({ success: false, message: "courseId is required" });
-    }
-
-    const booking = await Booking.findOne({ clerkUserId: userId, course: courseId}).sort({createdAt: -1}).lean();
-    if (!booking) {
-      return res.status(200).json({ 
-        success: true,
-        enrolled: false,
-        booking: null 
-      });
-    }
-
-    // to check enrollement
-    const paid = booking.paymentStatus === "Paid" || booking.paymentStatus === "paid" || booking.orderStatus === "Confirmed" || booking.orderStatus === "confirmed" || !booking.paidAt;
+    const bookings = await Booking.find().sort({ createdAt: -1 });
 
     return res.status(200).json({
       success: true,
-      enrolled: paid,
-      booking: booking,
+      count: bookings.length,
+      bookings,
     });
-
-      } catch (err) {
-    console.error("checkBooking error", err);
-    return res.status(500).json({ success: false, message: "Server error" });
-  }
-}
-
-/* ---------------- Authenticated: confirmPayment ----------------*/
-export const confirmPayment = async (req, res) => {
-  try {
-    const { userId } = getAuth(req) || {};
-    if (!userId) return res.status(401).json({ success: false, message: "Authentication required" });
-
-    const { session_id } = req.query;
-    if (!session_id) return res.status(400).json({ success: false, message: "session_id is required" });
-
-    if (!stripe) return res.status(500).json({ success: false, message: "Stripe not configured" });
-
-    const session = await stripe.checkout.sessions.retrieve(session_id);
-    if (!session) return res.status(400).json({ success: false, message: "Invalid session" });
-
-    if (session.payment_status !== "paid") {
-      return res.status(400).json({ success: false, message: "Payment not completed" });
-    }
-
-    // Try match by sessionId first, then metadata.bookingId
-    let booking = await Booking.findOneAndUpdate(
-      { sessionId: session_id },
-      { paymentStatus: "Paid", paymentIntentId: session.payment_intent || null, orderStatus: "Confirmed", paidAt: new Date() },
-      { new: true }
-    );
-
-    if (!booking && session.metadata?.bookingId) {
-      booking = await Booking.findOneAndUpdate(
-        { bookingId: session.metadata.bookingId },
-        { paymentStatus: "Paid", paymentIntentId: session.payment_intent || null, orderStatus: "Confirmed", paidAt: new Date() },
-        { new: true }
-      );
-    }
-
-    if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
-
-    return res.json({ success: true, booking });
-  } catch (err) {
-    console.error("confirmPayment:", err);
-    return res.status(500).json({ success: false, message: "Server error" });
+  } catch (error) {
+    console.error("Error in getBookings:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to retrieve bookings",
+      error: error.message,
+    });
   }
 };
 
-// getuserbooking
-export const getUserBookings = async (req, res) => {
-  try {
-    const { userId } = getAuth(req) || {};
-    if (!userId) return res.status(401).json({ success: false, message: "Authentication required" });
-
-    const bookings = await Booking.find({ clerkUserId: userId }).sort({ createdAt: -1 });
-    return res.json({ success: true, bookings });
-
-  } catch (err) {
-    console.error("getUserBookings:", err);
-    return res.status(500).json({ success: false, message: "Server error" });
-  }
-}
-
-// getStats
+/**
+ * @desc    Get dashboard analytics & statistics
+ * @route   GET /api/booking/stats
+ * @access  Admin
+ */
 export const getStats = async (req, res) => {
   try {
-    const totalBookings = await Booking.countDocuments();
-    const totalRevenueAgg = await Booking.aggregate([
-      { $match: { paymentStatus: "Paid" } },
-      { $group: { _id: null, total: { $sum: "$price" } } }
+    // 1. Calculate Total Bookings and Total Revenue (where Paid)
+    const overallStats = await Booking.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalBookings: { $sum: 1 },
+          totalRevenue: {
+            $sum: {
+              $cond: [{ $eq: ["$paymentStatus", "Paid"] }, "$price", 0],
+            },
+          },
+        },
+      },
     ]);
 
-    const totalRevenue = totalRevenueAgg.length > 0 ? totalRevenueAgg[0].total : 0;
+    const totalBookings = overallStats[0]?.totalBookings || 0;
+    const totalRevenue = overallStats[0]?.totalRevenue || 0;
 
+    // 2. Bookings in the last 7 days
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    const bookingsLast7Days = await Booking.countDocuments({ createdAt: { $gte: sevenDaysAgo } });
 
+    const bookingsLast7Days = await Booking.countDocuments({
+      createdAt: { $gte: sevenDaysAgo },
+    });
 
-    return res.json({ success: true, stats: { totalBookings, totalRevenue: totalRevenue[0]?.total || 0 } });
-
-    /* ---------------- GetStats ---------------- */
+    // 3. Top courses aggregated by booking count & total revenue
     const topCourses = await Booking.aggregate([
-      { $group: { _id: "$courseName", count: { $sum: 1 }, revenue: { $sum: "$price" } } },
+      {
+        $group: {
+          _id: "$course",
+          courseName: { $first: "$courseName" },
+          count: { $sum: 1 },
+          revenue: {
+            $sum: {
+              $cond: [{ $eq: ["$paymentStatus", "Paid"] }, "$price", 0],
+            },
+          },
+        },
+      },
       { $sort: { count: -1 } },
-      { $limit: 6 },
-      { $project: { courseName: "$_id", count: 1, revenue: 1, _id: 0 } },
+      { $limit: 5 },
     ]);
 
-    return res.json({ success: true, stats: { totalBookings, totalRevenue, bookingsLast7Days, topCourses } });
-
-  } 
-  
-  catch (err) {
-    console.error("getStats:", err);
-    return res.status(500).json({ success: false, message: "Server error" });
+    return res.status(200).json({
+      success: true,
+      stats: {
+        totalBookings,
+        totalRevenue,
+        bookingsLast7Days,
+        topCourses,
+      },
+    });
+  } catch (error) {
+    console.error("Error in getStats:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to compute booking statistics",
+      error: error.message,
+    });
   }
-}
+};
 
+/**
+ * @desc    Create a new booking entry
+ * @route   POST /api/booking/create
+ * @access  User
+ */
+export const createBooking = async (req, res) => {
+  try {
+    const {
+      courseId,
+      clerkUserId,
+      studentName,
+      notes,
+      paymentIntentId,
+      sessionId,
+    } = req.body;
+
+    if (!courseId || !clerkUserId) {
+      return res.status(400).json({
+        success: false,
+        message: "courseId and clerkUserId are required",
+      });
+    }
+
+    // Verify course
+    const courseObj = await Course.findById(courseId);
+    if (!courseObj) {
+      return res.status(404).json({
+        success: false,
+        message: "Course not found",
+      });
+    }
+
+    // Extract price from course object structure
+    const calculatedPrice =
+      courseObj.price?.sale ?? courseObj.price?.original ?? courseObj.price ?? 0;
+
+    // Generate unique booking identifier
+    const bookingId = `BK-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const newBooking = await Booking.create({
+      bookingId,
+      clerkUserId,
+      studentName: studentName || "Unknown",
+      course: courseObj._id.toString(),
+      courseName: courseObj.name || courseObj.title || "Untitled Course",
+      teacherName: courseObj.teacher || courseObj.instructor || "",
+      price: calculatedPrice,
+      paymentMethod: "Online",
+      paymentStatus: "Unpaid",
+      orderStatus: "Pending",
+      paymentIntentId: paymentIntentId || null,
+      sessionId: sessionId || null,
+      notes: notes || "",
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Booking created successfully",
+      booking: newBooking,
+    });
+  } catch (error) {
+    console.error("Error in createBooking:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to create booking",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Check if a user is already enrolled/booked in a course
+ * @route   GET /api/booking/check?courseId=...&clerkUserId=...
+ * @access  User
+ */
+export const checkBooking = async (req, res) => {
+  try {
+    const { courseId, clerkUserId } = req.query;
+
+    if (!courseId || !clerkUserId) {
+      return res.status(400).json({
+        success: false,
+        message: "courseId and clerkUserId query parameters are required",
+      });
+    }
+
+    const existingBooking = await Booking.findOne({
+      course: courseId,
+      clerkUserId,
+      paymentStatus: "Paid",
+    });
+
+    return res.status(200).json({
+      success: true,
+      isBooked: !!existingBooking,
+      booking: existingBooking || null,
+    });
+  } catch (error) {
+    console.error("Error in checkBooking:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to check booking status",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Confirm payment & complete course enrollment
+ * @route   GET /api/booking/confirm?bookingId=...
+ * @access  User / Payment Gateway Callback
+ */
+export const confirmPayment = async (req, res) => {
+  try {
+    const { bookingId, paymentIntentId, sessionId } = req.query;
+
+    if (!bookingId) {
+      return res.status(400).json({
+        success: false,
+        message: "bookingId is required",
+      });
+    }
+
+    const booking = await Booking.findOne({ bookingId });
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found",
+      });
+    }
+
+    booking.paymentStatus = "Paid";
+    booking.orderStatus = "Confirmed";
+    if (paymentIntentId) booking.paymentIntentId = paymentIntentId;
+    if (sessionId) booking.sessionId = sessionId;
+
+    await booking.save();
+
+    // Increment course statistics
+    await Course.findByIdAndUpdate(booking.course, {
+      $inc: { students: 1, purchases: 1 },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Payment confirmed and course booking updated",
+      booking,
+    });
+  } catch (error) {
+    console.error("Error in confirmPayment:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to confirm payment",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Get user's personal booking history
+ * @route   GET /api/booking/my?clerkUserId=...
+ * @access  User
+ */
+export const getUserBookings = async (req, res) => {
+  try {
+    const { clerkUserId } = req.query;
+
+    if (!clerkUserId) {
+      return res.status(400).json({
+        success: false,
+        message: "clerkUserId query parameter is required",
+      });
+    }
+
+    const bookings = await Booking.find({ clerkUserId }).sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: bookings.length,
+      bookings,
+    });
+  } catch (error) {
+    console.error("Error in getUserBookings:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to retrieve user bookings",
+      error: error.message,
+    });
+  }
+};

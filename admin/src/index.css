@@ -1,24 +1,29 @@
 @import "tailwindcss";
 
+@layer base {
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+}
+
 @keyframes floaty {
-    0% {
-        transform: translateY(0);
-    }
-
-    50% {
-        transform: translateY(-10px);
-    }
-
-    100% {
-        transform: translateY(0);
-    }
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
 }
 
 .animate-float {
-    animation: floaty 3s ease-in-out infinite;
+  animation: floaty 3s ease-in-out infinite;
 }
 
 .duration-3000 {
-    animation-duration: 3s;
-    transition-duration: 3s;
+  animation-duration: 3s;
+  transition-duration: 3s;
 }

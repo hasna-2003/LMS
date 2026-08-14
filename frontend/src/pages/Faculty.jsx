@@ -3,7 +3,7 @@ import Layout from "../components/Layout";
 import {
   Search,
   Sparkles,
-  Linkedin,
+  Globe,
   Mail,
   BookOpen,
   Award,
@@ -233,7 +233,7 @@ const Faculty = () => {
                         title="LinkedIn Profile"
                         className="p-2 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
                       >
-                        <Linkedin className="h-4 w-4" />
+                        <Globe className="h-4 w-4" />
                       </a>
                     </div>
 
