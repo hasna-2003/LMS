@@ -8,6 +8,7 @@ import Courses from "./pages/Courses";
 import MyCoursesPage from "./pages/MyCoursesPage";
 import CourseDetailPage from "./pages/CourseDetailPage";
 
+
 const App = () => {
   return (
     <Routes>

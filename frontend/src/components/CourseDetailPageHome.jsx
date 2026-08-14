@@ -10,13 +10,12 @@ import {
   X,
   ArrowLeft,
   User,
-  Star,
   Award,
   Target,
   ArrowRight,
   Sparkles,
-  Tag,
 } from "lucide-react";
+
 import coursesData from "../../assets/dummyHdata";
 import {
   courseDetailStylesH,
@@ -25,28 +24,56 @@ import {
   courseDetailCustomStyles,
 } from "../../assets/dummyStyles";
 
+/* =========================================================
+   HELPERS
+========================================================= */
+
 const fmtMinutes = (mins) => {
-  const h = Math.floor((mins || 0) / 60);
-  const m = (mins || 0) % 60;
-  if (h === 0) return `${m}m`;
+  const minutes = Number(mins) || 0;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+
+  if (h === 0) {
+    return `${m}m`;
+  }
+
+  if (m === 0) {
+    return `${h}h`;
+  }
+
   return `${h}h ${m}m`;
 };
 
+/* =========================================================
+   TOAST
+========================================================= */
+
 const Toast = ({ message, type = "info", onClose }) => {
   useEffect(() => {
-    const timer = setTimeout(onClose, 4000);
+    const timer = setTimeout(() => {
+      onClose();
+    }, 4000);
+
     return () => clearTimeout(timer);
   }, [onClose]);
 
   return (
     <div
       className={`${toastStyles.toast} ${
-        type === "error" ? toastStyles.toastError : toastStyles.toastInfo
+        type === "error"
+          ? toastStyles.toastError
+          : toastStyles.toastInfo
       }`}
     >
       <div className={toastStyles.toastContent}>
         <span>{message}</span>
-        <button onClick={onClose} className={toastStyles.toastClose}>
+
+        <button
+          type="button"
+          onClick={onClose}
+          className={toastStyles.toastClose}
+          aria-label="Close notification"
+        >
           <X className={toastStyles.toastCloseIcon} />
         </button>
       </div>
@@ -54,325 +81,664 @@ const Toast = ({ message, type = "info", onClose }) => {
   );
 };
 
-/* ----------------- helpers for video URLs ----------------- */
+/* =========================================================
+   VIDEO URL HELPERS
+========================================================= */
+
 const toEmbedUrl = (url) => {
   if (!url) return "";
+
   try {
     const trimmed = String(url).trim();
 
-    // already an embed url
-    if (/\/embed\//.test(trimmed)) return trimmed;
+    if (!trimmed) {
+      return "";
+    }
 
-    // youtube watch?v=VIDEOID
+    // Already an embed URL
+    if (
+      trimmed.includes("youtube.com/embed/") ||
+      trimmed.includes("youtube-nocookie.com/embed/")
+    ) {
+      return trimmed;
+    }
+
+    // YouTube watch URL
     const watchMatch = trimmed.match(/[?&]v=([^&#]+)/);
-    if (watchMatch && watchMatch[1]) {
+
+    if (watchMatch?.[1]) {
       return `https://www.youtube.com/embed/${watchMatch[1]}`;
     }
 
-    // youtu.be/VIDEOID
-    const shortMatch = trimmed.match(/youtu\.be\/([^?&#/]+)/);
-    if (shortMatch && shortMatch[1]) {
+    // youtu.be URL
+    const shortMatch = trimmed.match(
+      /youtu\.be\/([^?&#/]+)/
+    );
+
+    if (shortMatch?.[1]) {
       return `https://www.youtube.com/embed/${shortMatch[1]}`;
     }
 
-    // If the last path segment looks like a 11-char youtube id, use it
-    const lastSeg = trimmed.split("/").filter(Boolean).pop();
-    if (lastSeg && lastSeg.length === 11) {
-      return `https://www.youtube.com/embed/${lastSeg}`;
+    // youtube.com/shorts/VIDEO_ID
+    const shortsMatch = trimmed.match(
+      /youtube\.com\/shorts\/([^?&#/]+)/
+    );
+
+    if (shortsMatch?.[1]) {
+      return `https://www.youtube.com/embed/${shortsMatch[1]}`;
     }
 
-    // Not a youtube link we recognise — return original (may be already embeddable from another provider)
+    // If the final path segment looks like a YouTube ID
+    const lastSegment = trimmed
+      .split("/")
+      .filter(Boolean)
+      .pop();
+
+    if (lastSegment && /^[a-zA-Z0-9_-]{11}$/.test(lastSegment)) {
+      return `https://www.youtube.com/embed/${lastSegment}`;
+    }
+
+    // Other video provider / already valid URL
     return trimmed;
-  } catch (e) {
-    return url;
+  } catch (error) {
+    console.error("Error converting video URL:", error);
+    return String(url);
   }
 };
 
 const appendAutoplay = (embedUrl, autoplay = true) => {
-  if (!embedUrl) return "";
-  if (!autoplay) return embedUrl;
+  if (!embedUrl) {
+    return "";
+  }
+
+  if (!autoplay) {
+    return embedUrl;
+  }
+
   return embedUrl.includes("?")
     ? `${embedUrl}&autoplay=1`
     : `${embedUrl}?autoplay=1`;
 };
-/* ---------------------------------------------------------- */
+
+/* =========================================================
+   COURSE DETAIL COMPONENT
+========================================================= */
 
 const CourseDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const courseId = parseInt(id, 10);
 
-  // find course from dummy data early so we can base initial enrollment on it
-  const course = coursesData.find((c) => c.id === courseId);
+  /* -------------------------------------------------------
+     COURSE
+  ------------------------------------------------------- */
 
-  // whether course is free: explicit flag or missing price object => free
-  const courseIsFree = !!course?.isFree || !course?.price;
+  const courseId = Number.parseInt(id, 10);
 
-  // Replace these with actual authentication and enrollment state from your app
-  const [isLoggedIn] = useState(true); // Set to true for testing logged in flow
+  const course = useMemo(() => {
+    if (Number.isNaN(courseId)) {
+      return null;
+    }
 
-  // initialize enrollment based on course: free -> enrolled by default, paid -> not enrolled by default
-  const [isEnrolled, setIsEnrolled] = useState(() => !!courseIsFree);
+    return coursesData.find(
+      (item) => Number(item.id) === courseId
+    );
+  }, [courseId]);
+
+  /* -------------------------------------------------------
+     COURSE PRICE
+  ------------------------------------------------------- */
+
+  const priceObj = course?.price;
+
+  const hasPriceObject =
+    priceObj &&
+    typeof priceObj === "object" &&
+    (priceObj.sale != null || priceObj.original != null);
+
+  const salePrice =
+    hasPriceObject && priceObj.sale != null
+      ? Number(priceObj.sale)
+      : null;
+
+  const originalPrice =
+    hasPriceObject && priceObj.original != null
+      ? Number(priceObj.original)
+      : null;
+
+  const courseIsFree =
+    Boolean(course?.isFree) ||
+    !course?.price ||
+    (salePrice === 0 && originalPrice == null);
+
+  const formatCurrency = (amount) => {
+    if (
+      amount == null ||
+      Number.isNaN(Number(amount))
+    ) {
+      return "";
+    }
+
+    return `₹${Number(amount).toLocaleString("en-IN")}`;
+  };
+
+  const hasDiscount =
+    originalPrice != null &&
+    salePrice != null &&
+    originalPrice > salePrice;
+
+  /* -------------------------------------------------------
+     AUTHENTICATION
+     
+     Replace this with your real authentication state.
+  ------------------------------------------------------- */
+
+  const [isLoggedIn] = useState(true);
+
+  /* -------------------------------------------------------
+     ENROLLMENT
+  ------------------------------------------------------- */
+
+  const [isEnrolled, setIsEnrolled] = useState(
+    courseIsFree
+  );
+
   const [isEnrolling, setIsEnrolling] = useState(false);
 
+  /* -------------------------------------------------------
+     UI STATE
+  ------------------------------------------------------- */
+
   const [toast, setToast] = useState(null);
-  const [expandedLectures, setExpandedLectures] = useState(new Set()); // no auto-expand
-  const [completedChapters, setCompletedChapters] = useState(new Set());
-  const [isTeacherAnimating, setIsTeacherAnimating] = useState(false);
-  const [isPageLoaded, setIsPageLoaded] = useState(false);
 
-  // keep enrollment in sync if user navigates to another course without remount
-  useEffect(() => {
-    if (courseIsFree) {
-      setIsEnrolled(true);
-    }
-    // if it's paid we don't automatically unenroll the user here (preserve previous value)
-  }, [courseIsFree]);
+  const [expandedLectures, setExpandedLectures] =
+    useState(new Set());
 
-  // only animate teacher name on mount — do NOT auto-expand or auto-select lectures
-  useEffect(() => {
-    setIsTeacherAnimating(true);
-    const timer = setTimeout(() => setIsTeacherAnimating(false), 1000);
-    return () => clearTimeout(timer);
-  }, [course]);
+  const [completedChapters, setCompletedChapters] =
+    useState(new Set());
 
-  useEffect(() => {
-    setIsPageLoaded(true);
-  }, []);
+  const [isTeacherAnimating, setIsTeacherAnimating] =
+    useState(false);
 
-  // selected content is null by default — user must click to select
+  const [isPageLoaded, setIsPageLoaded] =
+    useState(false);
+
   const [selectedContent, setSelectedContent] = useState({
-    type: "lecture", // 'lecture' or 'chapter'
+    type: "lecture",
     lectureId: null,
     chapterId: null,
   });
 
+  /* -------------------------------------------------------
+     RESET STATE WHEN COURSE CHANGES
+  ------------------------------------------------------- */
+
+  useEffect(() => {
+    setSelectedContent({
+      type: "lecture",
+      lectureId: null,
+      chapterId: null,
+    });
+
+    setExpandedLectures(new Set());
+    setCompletedChapters(new Set());
+
+    // Free courses are immediately accessible.
+    // Paid courses require enrollment.
+    setIsEnrolled(courseIsFree);
+
+    setIsEnrolling(false);
+  }, [courseId, courseIsFree]);
+
+  /* -------------------------------------------------------
+     TEACHER ANIMATION
+  ------------------------------------------------------- */
+
+  useEffect(() => {
+    setIsTeacherAnimating(true);
+
+    const timer = setTimeout(() => {
+      setIsTeacherAnimating(false);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [courseId]);
+
+  /* -------------------------------------------------------
+     PAGE LOAD ANIMATION
+  ------------------------------------------------------- */
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsPageLoaded(true);
+    }, 50);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  /* =======================================================
+     SELECTED LECTURE
+  ======================================================= */
+
   const selectedLecture = useMemo(() => {
-    if (!selectedContent.lectureId) return null;
+    if (!course || selectedContent.lectureId == null) {
+      return null;
+    }
+
     return (
-      (course?.lectures || []).find(
-        (l) => l.id === selectedContent.lectureId
+      (course.lectures || []).find(
+        (lecture) =>
+          Number(lecture.id) ===
+          Number(selectedContent.lectureId)
       ) || null
     );
-  }, [course, selectedContent.lectureId]);
+  }, [
+    course,
+    selectedContent.lectureId,
+  ]);
+
+  /* =======================================================
+     SELECTED CHAPTER
+  ======================================================= */
 
   const selectedChapter = useMemo(() => {
-    if (!selectedContent.chapterId || !selectedLecture) return null;
+    if (
+      !selectedLecture ||
+      selectedContent.chapterId == null
+    ) {
+      return null;
+    }
+
     return (
       (selectedLecture.chapters || []).find(
-        (ch) => ch.id === selectedContent.chapterId
+        (chapter) =>
+          Number(chapter.id) ===
+          Number(selectedContent.chapterId)
       ) || null
     );
-  }, [selectedLecture, selectedContent.chapterId]);
+  }, [
+    selectedLecture,
+    selectedContent.chapterId,
+  ]);
+
+  /* =======================================================
+     CURRENT VIDEO
+  ======================================================= */
 
   const currentVideoContent = useMemo(() => {
-    if (selectedContent.type === "chapter" && selectedChapter) {
+    if (
+      selectedContent.type === "chapter" &&
+      selectedChapter
+    ) {
       return selectedChapter;
     }
-    if (selectedContent.type === "lecture" && selectedLecture) {
+
+    if (
+      selectedContent.type === "lecture" &&
+      selectedLecture
+    ) {
       return selectedLecture;
     }
+
     return null;
-  }, [selectedContent, selectedLecture, selectedChapter]);
+  }, [
+    selectedContent.type,
+    selectedLecture,
+    selectedChapter,
+  ]);
+
+  /* =======================================================
+     TOTAL COURSE DURATION
+  ======================================================= */
 
   const totalMinutes = useMemo(() => {
-    return (course?.lectures || []).reduce(
-      (sum, l) => sum + (l.durationMin || 0),
+    if (!course) {
+      return 0;
+    }
+
+    return (course.lectures || []).reduce(
+      (total, lecture) =>
+        total + (Number(lecture.durationMin) || 0),
       0
     );
   }, [course]);
 
-  // --- Pricing: handle course.price as object { original, sale } ---
-  const priceObj = course?.price;
-  const hasPriceObj = !!(
-    priceObj &&
-    (priceObj.sale != null || priceObj.original != null)
-  );
-  const salePrice =
-    hasPriceObj && priceObj.sale != null ? Number(priceObj.sale) : null;
-  const originalPrice =
-    hasPriceObj && priceObj.original != null ? Number(priceObj.original) : null;
-  const formatCurrency = (n) => {
-    if (n == null || Number.isNaN(n)) return "";
-    return `₹${n}`;
-  };
-  const priceLabel =
-    salePrice != null
-      ? formatCurrency(salePrice)
-      : originalPrice != null
-      ? formatCurrency(originalPrice)
-      : "Free";
-  const hasDiscount =
-    originalPrice != null && salePrice != null && originalPrice > salePrice;
+  /* =======================================================
+     TOTAL CHAPTERS
+  ======================================================= */
 
-  // --- Handlers --- //
+  const totalChapters = useMemo(() => {
+    if (!course) {
+      return 0;
+    }
+
+    return (course.lectures || []).reduce(
+      (total, lecture) =>
+        total + (lecture.chapters?.length || 0),
+      0
+    );
+  }, [course]);
+
+  /* =======================================================
+     COURSE PROGRESS
+  ======================================================= */
+
+  const progressPercentage =
+    totalChapters > 0
+      ? Math.min(
+          100,
+          Math.round(
+            (completedChapters.size / totalChapters) *
+              100
+          )
+        )
+      : 0;
+
+  /* =======================================================
+     TOGGLE LECTURE
+  ======================================================= */
+
   const toggleLecture = (lectureId) => {
-    setExpandedLectures((prev) => {
-      const next = new Set(prev);
+    setExpandedLectures((previous) => {
+      const next = new Set(previous);
+
       if (next.has(lectureId)) {
         next.delete(lectureId);
       } else {
         next.add(lectureId);
       }
+
       return next;
     });
   };
 
-  const handleContentSelect = (lectureId, chapterId = null) => {
-    // If user is logged in AND enrolled (or the course is free), allow direct access
-    if (isLoggedIn && (isEnrolled || courseIsFree)) {
-      setSelectedContent({
-        type: chapterId ? "chapter" : "lecture",
-        lectureId,
-        chapterId,
-      });
+  /* =======================================================
+     SELECT CONTENT
+  ======================================================= */
 
-      // Expand lecture when content is selected (ensures chapter click opens the lecture)
-      setExpandedLectures((prev) =>
-        prev.has(lectureId) ? new Set(prev) : new Set([...prev, lectureId])
-      );
-      return;
-    }
-
-    // If not logged in
+  const handleContentSelect = (
+    lectureId,
+    chapterId = null
+  ) => {
+    // Login check
     if (!isLoggedIn) {
       setToast({
-        message: "Please login to access course content",
+        message:
+          "Please login to access course content.",
         type: "error",
       });
+
       return;
     }
 
-    // If logged in but not enrolled (and course is paid)
+    // Enrollment check
     if (!isEnrolled && !courseIsFree) {
       setToast({
-        message: "Please enroll in the course to access content",
+        message:
+          "Please enroll in the course to access content.",
         type: "error",
       });
+
       return;
     }
+
+    setSelectedContent({
+      type: chapterId != null ? "chapter" : "lecture",
+      lectureId,
+      chapterId,
+    });
+
+    // Automatically expand selected lecture
+    setExpandedLectures((previous) => {
+      const next = new Set(previous);
+      next.add(lectureId);
+      return next;
+    });
   };
 
-  // ---------- REPLACED handler: prevents expanding paid-course lectures for not-enrolled users ----------
+  /* =======================================================
+     LECTURE HEADER CLICK
+  ======================================================= */
+
   const onLectureHeaderClick = (lectureId) => {
     const isOpen = expandedLectures.has(lectureId);
 
+    // Collapse
     if (isOpen) {
-      // collapse
-      setExpandedLectures((prev) => {
-        const next = new Set(prev);
+      setExpandedLectures((previous) => {
+        const next = new Set(previous);
         next.delete(lectureId);
         return next;
       });
 
-      // if the lecture we just collapsed was selected, clear selection
-      if (selectedContent.lectureId === lectureId) {
+      // Clear selected content if this lecture was selected
+      if (
+        Number(selectedContent.lectureId) ===
+        Number(lectureId)
+      ) {
         setSelectedContent({
           type: "lecture",
           lectureId: null,
           chapterId: null,
         });
       }
+
       return;
     }
 
-    // Trying to expand — block expansion for paid courses if not enrolled
+    // Login check
+    if (!isLoggedIn) {
+      setToast({
+        message:
+          "Please login to view course content.",
+        type: "error",
+      });
+
+      return;
+    }
+
+    // Enrollment check
     if (!isEnrolled && !courseIsFree) {
-      // show the same toast message you already use elsewhere
       setToast({
-        message: "Please enroll in the course to view chapters",
+        message:
+          "Please enroll in the course to view chapters.",
         type: "error",
       });
+
       return;
     }
 
-    // expand + select the lecture (preserves auth/enroll checks inside handleContentSelect)
-    setExpandedLectures((prev) => new Set([...prev, lectureId]));
-    handleContentSelect(lectureId, null);
+    // Expand
+    toggleLecture(lectureId);
+
+    // Select lecture
+    setSelectedContent({
+      type: "lecture",
+      lectureId,
+      chapterId: null,
+    });
   };
-  // -----------------------------------------------------------------------------------------------
 
-  const toggleChapterCompletion = (chapterId, e) => {
-    if (e) e.stopPropagation();
+  /* =======================================================
+     CHAPTER COMPLETION
+  ======================================================= */
 
-    if (!isLoggedIn || (!isEnrolled && !courseIsFree)) {
+  const toggleChapterCompletion = (
+    chapterId,
+    event = null
+  ) => {
+    if (event) {
+      event.stopPropagation();
+    }
+
+    if (
+      !isLoggedIn ||
+      (!isEnrolled && !courseIsFree)
+    ) {
       setToast({
-        message: "Please enroll and login to track progress",
+        message:
+          "Please login and enroll to track progress.",
         type: "error",
       });
+
       return;
     }
 
-    setCompletedChapters((prev) => {
-      const next = new Set(prev);
-      if (next.has(chapterId)) next.delete(chapterId);
-      else next.add(chapterId);
+    setCompletedChapters((previous) => {
+      const next = new Set(previous);
+
+      if (next.has(chapterId)) {
+        next.delete(chapterId);
+      } else {
+        next.add(chapterId);
+      }
+
       return next;
     });
   };
 
+  /* =======================================================
+     ENROLL
+  ======================================================= */
+
   const handleEnroll = async () => {
     if (!isLoggedIn) {
       setToast({
-        message: "Please login to enroll in the course",
+        message:
+          "Please login to enroll in the course.",
         type: "error",
       });
+
       return;
     }
 
-    setIsEnrolling(true);
-    // Simulate enrollment process
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    if (courseIsFree) {
+      setIsEnrolled(true);
 
-    setIsEnrolled(true);
-    setIsEnrolling(false);
-    setToast({
-      message:
-        " Successfully enrolled in the course! You can now access all content.",
-      type: "info",
-    });
+      setToast({
+        message:
+          "You already have free access to this course.",
+        type: "info",
+      });
+
+      return;
+    }
+
+    if (isEnrolled) {
+      return;
+    }
+
+    try {
+      setIsEnrolling(true);
+
+      // ---------------------------------------------------
+      // Replace this simulated request with your backend API
+      // ---------------------------------------------------
+
+      await new Promise((resolve) =>
+        setTimeout(resolve, 1500)
+      );
+
+      setIsEnrolled(true);
+
+      setToast({
+        message:
+          "Successfully enrolled in the course! You can now access all content.",
+        type: "info",
+      });
+    } catch (error) {
+      console.error("Enrollment error:", error);
+
+      setToast({
+        message:
+          "Something went wrong while enrolling. Please try again.",
+        type: "error",
+      });
+    } finally {
+      setIsEnrolling(false);
+    }
   };
+
+  /* =======================================================
+     NAVIGATION
+  ======================================================= */
 
   const handleBackToHome = () => {
     navigate("/");
   };
 
+  /* =======================================================
+     COURSE NOT FOUND
+  ======================================================= */
+
   if (!course) {
     return (
-      <div className={courseDetailStylesH.notFoundContainer}>
+      <div
+        className={
+          courseDetailStylesH.notFoundContainer
+        }
+      >
         {/* Background Pattern */}
-        <div className={courseDetailStylesH.notFoundPattern}>
+        <div
+          className={
+            courseDetailStylesH.notFoundPattern
+          }
+        >
           <div
             className={`${courseDetailStylesH.notFoundBlob} top-10 left-10 bg-purple-300`}
-          ></div>
+          />
+
           <div
             className={`${courseDetailStylesH.notFoundBlob} top-10 right-10 bg-yellow-300 ${animationDelaysH.delay2000}`}
-          ></div>
+          />
+
           <div
             className={`${courseDetailStylesH.notFoundBlob} bottom-10 left-20 bg-pink-300 ${animationDelaysH.delay4000}`}
-          ></div>
+          />
         </div>
 
-        <div className={courseDetailStylesH.notFoundContent}>
-          <h2 className={courseDetailStylesH.notFoundTitle}>
+        <div
+          className={
+            courseDetailStylesH.notFoundContent
+          }
+        >
+          <h2
+            className={
+              courseDetailStylesH.notFoundTitle
+            }
+          >
             Course not found
           </h2>
-          <p className={courseDetailStylesH.notFoundText}>
-            Go back to courses list
-          </p>
-          <button
-            onClick={() => navigate("/courses")}
-            className={courseDetailStylesH.notFoundButton}
+
+          <p
+            className={
+              courseDetailStylesH.notFoundText
+            }
           >
-            Back to courses
+            The course you are looking for does not
+            exist.
+          </p>
+
+          <button
+            type="button"
+            onClick={() => navigate("/courses")}
+            className={
+              courseDetailStylesH.notFoundButton
+            }
+          >
+            Back to Courses
           </button>
         </div>
       </div>
     );
   }
 
+  /* =======================================================
+     RENDER
+  ======================================================= */
+
   return (
     <div className={courseDetailStylesH.pageContainer}>
+      {/* Toast */}
       {toast && (
         <Toast
           message={toast.message}
@@ -383,127 +749,287 @@ const CourseDetail = () => {
 
       <div
         className={`${courseDetailStylesH.mainContainer} ${
-          isPageLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
+          isPageLoaded
+            ? "opacity-100 translate-y-0"
+            : "opacity-0 translate-y-8"
         }`}
       >
-        {/* Header with Back Button */}
+        {/* =================================================
+            HEADER
+        ================================================= */}
+
         <div className="flex items-center justify-between">
           <button
+            type="button"
             onClick={handleBackToHome}
             className={courseDetailStylesH.backButton}
           >
-            <ArrowLeft className={courseDetailStylesH.backButtonIcon} />
-            <span className={courseDetailStylesH.backButtonText}>
+            <ArrowLeft
+              className={
+                courseDetailStylesH.backButtonIcon
+              }
+            />
+
+            <span
+              className={
+                courseDetailStylesH.backButtonText
+              }
+            >
               Back to Home
             </span>
           </button>
         </div>
 
-        {/* Enhanced Course Header */}
-        <div className={courseDetailStylesH.headerContainer}>
+        {/* =================================================
+            COURSE HEADER
+        ================================================= */}
+
+        <div
+          className={
+            courseDetailStylesH.headerContainer
+          }
+        >
           {/* Course Badge */}
-          <div className={courseDetailStylesH.courseBadge}>
-            <BookOpen className={courseDetailStylesH.badgeIcon} />
-            <span className={courseDetailStylesH.badgeText}>
-              {courseIsFree ? "Free Course" : "Premium Course"}
+          <div
+            className={
+              courseDetailStylesH.courseBadge
+            }
+          >
+            <BookOpen
+              className={
+                courseDetailStylesH.badgeIcon
+              }
+            />
+
+            <span
+              className={
+                courseDetailStylesH.badgeText
+              }
+            >
+              {courseIsFree
+                ? "Free Course"
+                : "Premium Course"}
             </span>
           </div>
 
-          {/* Course Title (responsive: smaller on small screens, identical at md and up) */}
-          <h1 className={courseDetailStylesH.courseTitle}>{course.name}</h1>
+          {/* Course Title */}
+          <h1
+            className={
+              courseDetailStylesH.courseTitle
+            }
+          >
+            {course.name}
+          </h1>
 
-          {/* Enhanced Overview Section */}
+          {/* Course Overview */}
           {course.overview && (
-            <div className={courseDetailStylesH.overviewContainer}>
-              <div className={courseDetailStylesH.overviewCard}>
-                <div className={courseDetailStylesH.overviewHeader}>
-                  <Target className={courseDetailStylesH.overviewIcon} />
-                  <h3 className={courseDetailStylesH.overviewTitle}>
+            <div
+              className={
+                courseDetailStylesH.overviewContainer
+              }
+            >
+              <div
+                className={
+                  courseDetailStylesH.overviewCard
+                }
+              >
+                <div
+                  className={
+                    courseDetailStylesH.overviewHeader
+                  }
+                >
+                  <Target
+                    className={
+                      courseDetailStylesH.overviewIcon
+                    }
+                  />
+
+                  <h3
+                    className={
+                      courseDetailStylesH.overviewTitle
+                    }
+                  >
                     Course Overview
                   </h3>
                 </div>
-                <p className={courseDetailStylesH.overviewText}>
+
+                <p
+                  className={
+                    courseDetailStylesH.overviewText
+                  }
+                >
                   {course.overview}
                 </p>
               </div>
             </div>
           )}
 
-          {/* Enhanced Course Stats */}
+          {/* Course Stats */}
           <div
             className={`${courseDetailStylesH.statsContainer} ${animationDelaysH.delay300}`}
           >
-            <div className={courseDetailStylesH.statItem}>
-              <Clock className={courseDetailStylesH.statIcon} />
-              <span className={courseDetailStylesH.statText}>
+            {/* Duration */}
+            <div
+              className={
+                courseDetailStylesH.statItem
+              }
+            >
+              <Clock
+                className={
+                  courseDetailStylesH.statIcon
+                }
+              />
+
+              <span
+                className={
+                  courseDetailStylesH.statText
+                }
+              >
                 {fmtMinutes(totalMinutes)}
               </span>
             </div>
-            <div className={courseDetailStylesH.statItem}>
-              <BookOpen className={courseDetailStylesH.statIcon} />
-              <span className={courseDetailStylesH.statText}>
-                {(course.lectures || []).length} lectures
+
+            {/* Lectures */}
+            <div
+              className={
+                courseDetailStylesH.statItem
+              }
+            >
+              <BookOpen
+                className={
+                  courseDetailStylesH.statIcon
+                }
+              />
+
+              <span
+                className={
+                  courseDetailStylesH.statText
+                }
+              >
+                {(course.lectures || []).length}{" "}
+                lectures
               </span>
             </div>
 
+            {/* Teacher */}
             <div
               className={`${courseDetailStylesH.teacherStat} ${
-                isTeacherAnimating ? "scale-110 bg-indigo-100/50" : ""
+                isTeacherAnimating
+                  ? "scale-110 bg-indigo-100/50"
+                  : ""
               }`}
             >
-              <User className={courseDetailStylesH.teacherIcon} />
-              <span className={courseDetailStylesH.teacherText}>
-                {course.teacher}
+              <User
+                className={
+                  courseDetailStylesH.teacherIcon
+                }
+              />
+
+              <span
+                className={
+                  courseDetailStylesH.teacherText
+                }
+              >
+                {course.teacher || "Instructor"}
               </span>
             </div>
           </div>
         </div>
 
-        {/* Main Content Grid (responsive) */}
+        {/* =================================================
+            MAIN CONTENT GRID
+        ================================================= */}
+
         <div className={courseDetailStylesH.mainGrid}>
-          {/* Video Player - Enhanced (keeps desktop height unchanged at lg/xl) */}
-          <div className={courseDetailStylesH.videoSection}>
-            <div className={courseDetailStylesH.videoContainer}>
-              <div className={courseDetailStylesH.videoWrapper}>
+          {/* =================================================
+              VIDEO SECTION
+          ================================================= */}
+
+          <div
+            className={
+              courseDetailStylesH.videoSection
+            }
+          >
+            <div
+              className={
+                courseDetailStylesH.videoContainer
+              }
+            >
+              {/* Video */}
+              <div
+                className={
+                  courseDetailStylesH.videoWrapper
+                }
+              >
                 {currentVideoContent?.videoUrl ? (
                   <iframe
                     title={
-                      currentVideoContent.title || currentVideoContent.name
+                      currentVideoContent.title ||
+                      currentVideoContent.name ||
+                      "Course video"
                     }
                     src={appendAutoplay(
-                      toEmbedUrl(currentVideoContent.videoUrl),
-                      isLoggedIn && (isEnrolled || courseIsFree)
+                      toEmbedUrl(
+                        currentVideoContent.videoUrl
+                      ),
+                      isLoggedIn &&
+                        (isEnrolled || courseIsFree)
                     )}
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen
-                    className={courseDetailStylesH.videoFrame}
+                    className={
+                      courseDetailStylesH.videoFrame
+                    }
                   />
                 ) : (
-                  <div className={courseDetailStylesH.videoPlaceholder}>
+                  <div
+                    className={
+                      courseDetailStylesH.videoPlaceholder
+                    }
+                  >
                     <div
-                      className={courseDetailStylesH.videoPlaceholderPattern}
+                      className={
+                        courseDetailStylesH.videoPlaceholderPattern
+                      }
                     >
                       <div
                         className={`${courseDetailStylesH.videoPlaceholderBlob} top-1/4 left-1/4 bg-purple-500`}
-                      ></div>
+                      />
+
                       <div
                         className={`${courseDetailStylesH.videoPlaceholderBlob} bottom-1/4 right-1/4 bg-blue-500`}
-                      ></div>
+                      />
                     </div>
+
                     <div
-                      className={courseDetailStylesH.videoPlaceholderContent}
+                      className={
+                        courseDetailStylesH.videoPlaceholderContent
+                      }
                     >
-                      <div className={courseDetailStylesH.videoPlaceholderIcon}>
+                      <div
+                        className={
+                          courseDetailStylesH.videoPlaceholderIcon
+                        }
+                      >
                         <Play
                           className={
                             courseDetailStylesH.videoPlaceholderPlayIcon
                           }
                         />
                       </div>
-                      <p className={courseDetailStylesH.videoPlaceholderText}>
-                        Select a lecture or chapter to play video
+
+                      <p
+                        className={
+                          courseDetailStylesH.videoPlaceholderText
+                        }
+                      >
+                        Select a lecture or chapter to
+                        play video
                       </p>
-                      {(!isLoggedIn || !(isEnrolled || courseIsFree)) && (
+
+                      {(!isLoggedIn ||
+                        !(isEnrolled ||
+                          courseIsFree)) && (
                         <p
                           className={
                             courseDetailStylesH.videoPlaceholderSubtext
@@ -519,29 +1045,69 @@ const CourseDetail = () => {
                 )}
               </div>
 
-              <div className={courseDetailStylesH.videoInfo}>
+              {/* Video Information */}
+              <div
+                className={
+                  courseDetailStylesH.videoInfo
+                }
+              >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <h3 className={courseDetailStylesH.videoTitle}>
+                    <h3
+                      className={
+                        courseDetailStylesH.videoTitle
+                      }
+                    >
                       {currentVideoContent?.title ||
                         currentVideoContent?.name ||
                         "Select content to play"}
                     </h3>
-                    <p className={courseDetailStylesH.videoDescription}>
-                      {selectedContent.type === "chapter"
-                        ? `Part of: ${selectedLecture?.title}`
-                        : currentVideoContent?.description}
+
+                    <p
+                      className={
+                        courseDetailStylesH.videoDescription
+                      }
+                    >
+                      {selectedContent.type ===
+                        "chapter" &&
+                      selectedLecture
+                        ? `Part of: ${selectedLecture.title}`
+                        : currentVideoContent?.description ||
+                          "Choose a lecture or chapter from the course content."}
                     </p>
-                    {currentVideoContent?.durationMin && (
-                      <div className={courseDetailStylesH.videoMeta}>
-                        <div className={courseDetailStylesH.durationBadge}>
-                          <Clock className={courseDetailStylesH.durationIcon} />
+
+                    {currentVideoContent?.durationMin !=
+                      null && (
+                      <div
+                        className={
+                          courseDetailStylesH.videoMeta
+                        }
+                      >
+                        <div
+                          className={
+                            courseDetailStylesH.durationBadge
+                          }
+                        >
+                          <Clock
+                            className={
+                              courseDetailStylesH.durationIcon
+                            }
+                          />
+
                           <span>
-                            {fmtMinutes(currentVideoContent.durationMin)}
+                            {fmtMinutes(
+                              currentVideoContent.durationMin
+                            )}
                           </span>
                         </div>
-                        {selectedContent.type === "chapter" && (
-                          <span className={courseDetailStylesH.chapterBadge}>
+
+                        {selectedContent.type ===
+                          "chapter" && (
+                          <span
+                            className={
+                              courseDetailStylesH.chapterBadge
+                            }
+                          >
                             Chapter
                           </span>
                         )}
@@ -550,39 +1116,65 @@ const CourseDetail = () => {
                   </div>
                 </div>
 
-                {/* Enhanced Completion Button */}
+                {/* Completion Button */}
                 {isLoggedIn &&
                   (isEnrolled || courseIsFree) &&
-                  selectedContent.chapterId && (
-                    <div className={courseDetailStylesH.completionSection}>
+                  selectedContent.chapterId != null && (
+                    <div
+                      className={
+                        courseDetailStylesH.completionSection
+                      }
+                    >
                       <button
+                        type="button"
                         onClick={() =>
-                          toggleChapterCompletion(selectedContent.chapterId)
+                          toggleChapterCompletion(
+                            selectedContent.chapterId
+                          )
                         }
-                        className={`${courseDetailStylesH.completionButton} ${
-                          completedChapters.has(selectedContent.chapterId)
+                        className={`${
+                          courseDetailStylesH.completionButton
+                        } ${
+                          completedChapters.has(
+                            selectedContent.chapterId
+                          )
                             ? courseDetailStylesH.completionButtonCompleted
                             : courseDetailStylesH.completionButtonIncomplete
                         }`}
                       >
-                        {completedChapters.has(selectedContent.chapterId) ? (
+                        {completedChapters.has(
+                          selectedContent.chapterId
+                        ) ? (
                           <>
                             <CheckCircle
-                              className={courseDetailStylesH.completionIcon}
+                              className={
+                                courseDetailStylesH.completionIcon
+                              }
                             />
+
                             Chapter Completed
                           </>
                         ) : (
                           <>
                             <Circle
-                              className={courseDetailStylesH.completionIcon}
+                              className={
+                                courseDetailStylesH.completionIcon
+                              }
                             />
+
                             Mark as Complete
                           </>
                         )}
                       </button>
-                      <p className={courseDetailStylesH.completionText}>
-                        {completedChapters.has(selectedContent.chapterId)
+
+                      <p
+                        className={
+                          courseDetailStylesH.completionText
+                        }
+                      >
+                        {completedChapters.has(
+                          selectedContent.chapterId
+                        )
                           ? "Great job! You've completed this chapter."
                           : "Click to mark this chapter as completed."}
                       </p>
@@ -592,180 +1184,368 @@ const CourseDetail = () => {
             </div>
           </div>
 
-          {/* Enhanced Sidebar */}
-          <aside className={courseDetailStylesH.sidebar}>
-            {/* Course Content */}
+          {/* =================================================
+              SIDEBAR
+          ================================================= */}
+
+          <aside
+            className={courseDetailStylesH.sidebar}
+          >
+            {/* =================================================
+                COURSE CONTENT
+            ================================================= */}
+
             <div
               className={`${courseDetailStylesH.sidebarCard} ${animationDelaysH.delay200}`}
             >
-              <div className={courseDetailStylesH.contentHeader}>
-                <h4 className={courseDetailStylesH.contentTitle}>
+              <div
+                className={
+                  courseDetailStylesH.contentHeader
+                }
+              >
+                <h4
+                  className={
+                    courseDetailStylesH.contentTitle
+                  }
+                >
                   Course Content
                 </h4>
 
                 {courseIsFree && (
-                  <div className={courseDetailStylesH.freeAccessBadge}>
-                    <Sparkles className={courseDetailStylesH.freeAccessIcon} />
+                  <div
+                    className={
+                      courseDetailStylesH.freeAccessBadge
+                    }
+                  >
+                    <Sparkles
+                      className={
+                        courseDetailStylesH.freeAccessIcon
+                      }
+                    />
+
                     Free Access
                   </div>
                 )}
               </div>
 
-              <div className={courseDetailStylesH.contentList}>
-                {(course.lectures || []).map((lecture, index) => (
-                  <div
-                    key={lecture.id}
-                    className={courseDetailStylesH.lectureItem}
-                    style={{ animationDelay: `${index * 100}ms` }}
-                  >
-                    {/* Lecture Header */}
-                    <div
-                      className={`${courseDetailStylesH.lectureHeader} ${
-                        expandedLectures.has(lecture.id)
-                          ? courseDetailStylesH.lectureHeaderExpanded
-                          : courseDetailStylesH.lectureHeaderNormal
-                      }`}
-                      onClick={() => onLectureHeaderClick(lecture.id)}
-                    >
-                      <div className={courseDetailStylesH.lectureContent}>
-                        <div className={courseDetailStylesH.lectureLeft}>
+              <div
+                className={
+                  courseDetailStylesH.contentList
+                }
+              >
+                {(course.lectures || []).map(
+                  (lecture, index) => {
+                    const lectureId = lecture.id;
+                    const isExpanded =
+                      expandedLectures.has(
+                        lectureId
+                      );
+
+                    return (
+                      <div
+                        key={lectureId}
+                        className={
+                          courseDetailStylesH.lectureItem
+                        }
+                        style={{
+                          animationDelay: `${
+                            index * 100
+                          }ms`,
+                        }}
+                      >
+                        {/* Lecture Header */}
+                        <div
+                          className={`${
+                            courseDetailStylesH.lectureHeader
+                          } ${
+                            isExpanded
+                              ? courseDetailStylesH.lectureHeaderExpanded
+                              : courseDetailStylesH.lectureHeaderNormal
+                          }`}
+                          onClick={() =>
+                            onLectureHeaderClick(
+                              lectureId
+                            )
+                          }
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(event) => {
+                            if (
+                              event.key === "Enter" ||
+                              event.key === " "
+                            ) {
+                              event.preventDefault();
+
+                              onLectureHeaderClick(
+                                lectureId
+                              );
+                            }
+                          }}
+                        >
                           <div
-                            className={`${courseDetailStylesH.lectureChevron} ${
-                              expandedLectures.has(lecture.id)
-                                ? courseDetailStylesH.lectureChevronExpanded
-                                : courseDetailStylesH.lectureChevronNormal
-                            }`}
+                            className={
+                              courseDetailStylesH.lectureContent
+                            }
                           >
-                            <ChevronDown className="w-5 h-5" />
-                          </div>
-                          <div className={courseDetailStylesH.lectureInfo}>
-                            <div className={courseDetailStylesH.lectureTitle}>
-                              {lecture.title}
-                            </div>
-                            <div className={courseDetailStylesH.lectureMeta}>
-                              <div
-                                className={courseDetailStylesH.lectureDuration}
-                              >
-                                <Clock
-                                  className={
-                                    courseDetailStylesH.lectureDurationIcon
-                                  }
-                                />
-                                {fmtMinutes(lecture.durationMin)}
-                              </div>
-                              <span
-                                className={
-                                  courseDetailStylesH.lectureChaptersCount
-                                }
-                              >
-                                {lecture.chapters?.length || 0} chapters
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Chapters List */}
-                    {expandedLectures.has(lecture.id) && (
-                      <div className={courseDetailStylesH.chaptersList}>
-                        {(lecture.chapters || []).map((chapter) => {
-                          const isCompleted = completedChapters.has(chapter.id);
-                          const isSelected =
-                            selectedContent.chapterId === chapter.id &&
-                            selectedContent.lectureId === lecture.id;
-
-                          return (
                             <div
-                              key={chapter.id}
-                              className={`${courseDetailStylesH.chapterItem} ${
-                                isSelected
-                                  ? courseDetailStylesH.chapterItemSelected
-                                  : courseDetailStylesH.chapterItemNormal
-                              }`}
-                              onClick={() =>
-                                handleContentSelect(lecture.id, chapter.id)
+                              className={
+                                courseDetailStylesH.lectureLeft
                               }
                             >
                               <div
-                                className={courseDetailStylesH.chapterContent}
+                                className={`${
+                                  courseDetailStylesH.lectureChevron
+                                } ${
+                                  isExpanded
+                                    ? courseDetailStylesH.lectureChevronExpanded
+                                    : courseDetailStylesH.lectureChevronNormal
+                                }`}
+                              >
+                                <ChevronDown className="w-5 h-5" />
+                              </div>
+
+                              <div
+                                className={
+                                  courseDetailStylesH.lectureInfo
+                                }
                               >
                                 <div
-                                  className={courseDetailStylesH.chapterLeft}
+                                  className={
+                                    courseDetailStylesH.lectureTitle
+                                  }
                                 >
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleChapterCompletion(chapter.id, e);
-                                    }}
-                                    className={`${
-                                      courseDetailStylesH.chapterCompletionButton
-                                    } ${
-                                      isCompleted
-                                        ? courseDetailStylesH.chapterCompletionCompleted
-                                        : courseDetailStylesH.chapterCompletionNormal
-                                    }`}
-                                  >
-                                    {isCompleted ? (
-                                      <CheckCircle className="w-5 h-5" />
-                                    ) : (
-                                      <Circle className="w-5 h-5" />
-                                    )}
-                                  </button>
-                                  <div
-                                    className={courseDetailStylesH.chapterInfo}
-                                  >
-                                    <div
-                                      className={`${
-                                        courseDetailStylesH.chapterName
-                                      } ${
-                                        isSelected
-                                          ? courseDetailStylesH.chapterNameSelected
-                                          : courseDetailStylesH.chapterNameNormal
-                                      }`}
-                                    >
-                                      {chapter.name}
-                                    </div>
-                                    <div
-                                      className={
-                                        courseDetailStylesH.chapterTopic
-                                      }
-                                    >
-                                      {chapter.topic}
-                                    </div>
-                                  </div>
+                                  {lecture.title}
                                 </div>
-                                <div className="flex items-center gap-3">
-                                  <span
+
+                                <div
+                                  className={
+                                    courseDetailStylesH.lectureMeta
+                                  }
+                                >
+                                  <div
                                     className={
-                                      courseDetailStylesH.chapterDuration
+                                      courseDetailStylesH.lectureDuration
                                     }
                                   >
-                                    {fmtMinutes(chapter.durationMin)}
+                                    <Clock
+                                      className={
+                                        courseDetailStylesH.lectureDurationIcon
+                                      }
+                                    />
+
+                                    {fmtMinutes(
+                                      lecture.durationMin
+                                    )}
+                                  </div>
+
+                                  <span
+                                    className={
+                                      courseDetailStylesH.lectureChaptersCount
+                                    }
+                                  >
+                                    {lecture.chapters
+                                      ?.length || 0}{" "}
+                                    chapters
                                   </span>
                                 </div>
                               </div>
                             </div>
-                          );
-                        })}
+                          </div>
+                        </div>
+
+                        {/* Chapters */}
+                        {isExpanded && (
+                          <div
+                            className={
+                              courseDetailStylesH.chaptersList
+                            }
+                          >
+                            {(lecture.chapters || []).map(
+                              (chapter) => {
+                                const isCompleted =
+                                  completedChapters.has(
+                                    chapter.id
+                                  );
+
+                                const isSelected =
+                                  Number(
+                                    selectedContent.chapterId
+                                  ) ===
+                                    Number(
+                                      chapter.id
+                                    ) &&
+                                  Number(
+                                    selectedContent.lectureId
+                                  ) ===
+                                    Number(
+                                      lecture.id
+                                    );
+
+                                return (
+                                  <div
+                                    key={chapter.id}
+                                    className={`${
+                                      courseDetailStylesH.chapterItem
+                                    } ${
+                                      isSelected
+                                        ? courseDetailStylesH.chapterItemSelected
+                                        : courseDetailStylesH.chapterItemNormal
+                                    }`}
+                                    onClick={() =>
+                                      handleContentSelect(
+                                        lecture.id,
+                                        chapter.id
+                                      )
+                                    }
+                                    role="button"
+                                    tabIndex={0}
+                                    onKeyDown={(
+                                      event
+                                    ) => {
+                                      if (
+                                        event.key ===
+                                          "Enter" ||
+                                        event.key ===
+                                          " "
+                                      ) {
+                                        event.preventDefault();
+
+                                        handleContentSelect(
+                                          lecture.id,
+                                          chapter.id
+                                        );
+                                      }
+                                    }}
+                                  >
+                                    <div
+                                      className={
+                                        courseDetailStylesH.chapterContent
+                                      }
+                                    >
+                                      <div
+                                        className={
+                                          courseDetailStylesH.chapterLeft
+                                        }
+                                      >
+                                        {/* Completion */}
+                                        <button
+                                          type="button"
+                                          onClick={(
+                                            event
+                                          ) => {
+                                            event.stopPropagation();
+
+                                            toggleChapterCompletion(
+                                              chapter.id,
+                                              event
+                                            );
+                                          }}
+                                          className={`${
+                                            courseDetailStylesH.chapterCompletionButton
+                                          } ${
+                                            isCompleted
+                                              ? courseDetailStylesH.chapterCompletionCompleted
+                                              : courseDetailStylesH.chapterCompletionNormal
+                                          }`}
+                                          aria-label={
+                                            isCompleted
+                                              ? "Mark chapter as incomplete"
+                                              : "Mark chapter as complete"
+                                          }
+                                        >
+                                          {isCompleted ? (
+                                            <CheckCircle className="w-5 h-5" />
+                                          ) : (
+                                            <Circle className="w-5 h-5" />
+                                          )}
+                                        </button>
+
+                                        <div
+                                          className={
+                                            courseDetailStylesH.chapterInfo
+                                          }
+                                        >
+                                          <div
+                                            className={`${
+                                              courseDetailStylesH.chapterName
+                                            } ${
+                                              isSelected
+                                                ? courseDetailStylesH.chapterNameSelected
+                                                : courseDetailStylesH.chapterNameNormal
+                                            }`}
+                                          >
+                                            {chapter.name}
+                                          </div>
+
+                                          <div
+                                            className={
+                                              courseDetailStylesH.chapterTopic
+                                            }
+                                          >
+                                            {chapter.topic}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      <div className="flex items-center gap-3">
+                                        <span
+                                          className={
+                                            courseDetailStylesH.chapterDuration
+                                          }
+                                        >
+                                          {fmtMinutes(
+                                            chapter.durationMin
+                                          )}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              }
+                            )}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                ))}
+                    );
+                  }
+                )}
               </div>
             </div>
 
-            {/* Enhanced Pricing Card */}
+            {/* =================================================
+                PRICING CARD
+            ================================================= */}
+
             <div
               className={`${courseDetailStylesH.sidebarCard} ${animationDelaysH.delay200}`}
             >
-              <div className={courseDetailStylesH.pricingHeader}>
-                <h5 className={courseDetailStylesH.pricingTitle}>Pricing</h5>
+              <div
+                className={
+                  courseDetailStylesH.pricingHeader
+                }
+              >
+                <h5
+                  className={
+                    courseDetailStylesH.pricingTitle
+                  }
+                >
+                  Pricing
+                </h5>
               </div>
 
-              <div className={courseDetailStylesH.pricingAmount}>
-                <div className={courseDetailStylesH.pricingCurrent}>
-                  {salePrice != null
+              <div
+                className={
+                  courseDetailStylesH.pricingAmount
+                }
+              >
+                <div
+                  className={
+                    courseDetailStylesH.pricingCurrent
+                  }
+                >
+                  {courseIsFree
+                    ? "Free"
+                    : salePrice != null
                     ? formatCurrency(salePrice)
                     : originalPrice != null
                     ? formatCurrency(originalPrice)
@@ -773,22 +1553,37 @@ const CourseDetail = () => {
                 </div>
 
                 {hasDiscount && (
-                  <div className={courseDetailStylesH.pricingOriginal}>
+                  <div
+                    className={
+                      courseDetailStylesH.pricingOriginal
+                    }
+                  >
                     {formatCurrency(originalPrice)}
                   </div>
                 )}
 
                 {hasDiscount && (
-                  <div className={courseDetailStylesH.pricingDiscount}>
+                  <div
+                    className={
+                      courseDetailStylesH.pricingDiscount
+                    }
+                  >
                     {Math.round(
-                      ((originalPrice - salePrice) / originalPrice) * 100
+                      ((originalPrice -
+                        salePrice) /
+                        originalPrice) *
+                        100
                     )}
                     % off
                   </div>
                 )}
               </div>
 
-              <p className={courseDetailStylesH.pricingDescription}>
+              <p
+                className={
+                  courseDetailStylesH.pricingDescription
+                }
+              >
                 {courseIsFree
                   ? "Free access · Learn anytime"
                   : "One-time payment · Lifetime access · 30-day guarantee"}
@@ -798,23 +1593,33 @@ const CourseDetail = () => {
               <div className="mt-6">
                 {!courseIsFree && !isEnrolled ? (
                   <button
+                    type="button"
                     onClick={handleEnroll}
                     disabled={isEnrolling}
-                    className={courseDetailStylesH.enrollButton}
+                    className={
+                      courseDetailStylesH.enrollButton
+                    }
                   >
                     {isEnrolling ? (
                       <>
                         <div
-                          className={courseDetailStylesH.enrollSpinner}
-                        ></div>
+                          className={
+                            courseDetailStylesH.enrollSpinner
+                          }
+                        />
+
                         Enrolling...
                       </>
                     ) : (
                       <>
                         <Play
-                          className={courseDetailStylesH.enrollButtonIcon}
+                          className={
+                            courseDetailStylesH.enrollButtonIcon
+                          }
                         />
+
                         Enroll Now
+
                         <span className="ml-auto opacity-80 group-hover:opacity-100">
                           <ArrowRight className="w-4 h-4" />
                         </span>
@@ -823,80 +1628,146 @@ const CourseDetail = () => {
                   </button>
                 ) : courseIsFree ? (
                   <button
+                    type="button"
                     disabled
-                    className={courseDetailStylesH.enrollButtonFree}
+                    className={
+                      courseDetailStylesH.enrollButtonFree
+                    }
                   >
                     <CheckCircle
-                      className={courseDetailStylesH.enrollButtonIcon}
+                      className={
+                        courseDetailStylesH.enrollButtonIcon
+                      }
                     />
+
                     Free Course - Access Granted
                   </button>
                 ) : (
                   <button
+                    type="button"
                     disabled
-                    className={courseDetailStylesH.enrollButtonEnrolled}
+                    className={
+                      courseDetailStylesH.enrollButtonEnrolled
+                    }
                   >
                     <CheckCircle
-                      className={courseDetailStylesH.enrollButtonIcon}
+                      className={
+                        courseDetailStylesH.enrollButtonIcon
+                      }
                     />
+
                     Enrolled
                   </button>
                 )}
               </div>
             </div>
 
-            {/* Enhanced Progress Summary */}
+            {/* =================================================
+                PROGRESS CARD
+            ================================================= */}
+
             <div
               className={`${courseDetailStylesH.sidebarCard} ${animationDelaysH.delay400}`}
             >
-              <div className={courseDetailStylesH.progressHeader}>
-                <Award className={courseDetailStylesH.progressIcon} />
-                <h5 className={courseDetailStylesH.progressTitle}>
+              <div
+                className={
+                  courseDetailStylesH.progressHeader
+                }
+              >
+                <Award
+                  className={
+                    courseDetailStylesH.progressIcon
+                  }
+                />
+
+                <h5
+                  className={
+                    courseDetailStylesH.progressTitle
+                  }
+                >
                   Your Progress
                 </h5>
               </div>
-              <div className={courseDetailStylesH.progressSection}>
+
+              <div
+                className={
+                  courseDetailStylesH.progressSection
+                }
+              >
+                {/* Progress */}
                 <div>
                   <div className="flex justify-between text-sm mb-2">
-                    <span className="text-gray-600">Course Completion</span>
+                    <span className="text-gray-600">
+                      Course Completion
+                    </span>
+
                     <span className="font-semibold text-indigo-600">
-                      {Math.round(
-                        (completedChapters.size /
-                          (course.lectures?.flatMap((l) => l.chapters || [])
-                            .length || 1)) *
-                          100
-                      )}
-                      %
+                      {progressPercentage}%
                     </span>
                   </div>
-                  <div className={courseDetailStylesH.progressBarContainer}>
+
+                  <div
+                    className={
+                      courseDetailStylesH.progressBarContainer
+                    }
+                  >
                     <div
-                      className={courseDetailStylesH.progressBar}
+                      className={
+                        courseDetailStylesH.progressBar
+                      }
                       style={{
-                        width: `${
-                          (completedChapters.size /
-                            (course.lectures?.flatMap((l) => l.chapters || [])
-                              .length || 1)) *
-                          100
-                        }%`,
+                        width: `${progressPercentage}%`,
                       }}
                     />
                   </div>
                 </div>
-                <div className={courseDetailStylesH.progressStats}>
-                  <div className={courseDetailStylesH.progressStat}>
-                    <div className={courseDetailStylesH.progressStatValue}>
+
+                {/* Progress Stats */}
+                <div
+                  className={
+                    courseDetailStylesH.progressStats
+                  }
+                >
+                  <div
+                    className={
+                      courseDetailStylesH.progressStat
+                    }
+                  >
+                    <div
+                      className={
+                        courseDetailStylesH.progressStatValue
+                      }
+                    >
                       {fmtMinutes(totalMinutes)}
                     </div>
-                    <div className={courseDetailStylesH.progressStatLabel}>
+
+                    <div
+                      className={
+                        courseDetailStylesH.progressStatLabel
+                      }
+                    >
                       Total Duration
                     </div>
                   </div>
-                  <div className={courseDetailStylesH.progressStat}>
-                    <div className={courseDetailStylesH.progressStatValue}>
+
+                  <div
+                    className={
+                      courseDetailStylesH.progressStat
+                    }
+                  >
+                    <div
+                      className={
+                        courseDetailStylesH.progressStatValue
+                      }
+                    >
                       {completedChapters.size}
                     </div>
-                    <div className={courseDetailStylesH.progressStatLabel}>
+
+                    <div
+                      className={
+                        courseDetailStylesH.progressStatLabel
+                      }
+                    >
                       Completed
                     </div>
                   </div>
@@ -907,8 +1778,18 @@ const CourseDetail = () => {
         </div>
       </div>
 
-      {/* Add custom styles for animations */}
-      <style jsx>{courseDetailCustomStyles}</style>
+      {/* =====================================================
+          CUSTOM ANIMATIONS
+
+          IMPORTANT:
+          Use normal <style> instead of <style jsx>.
+          <style jsx> requires styled-jsx and is not normally
+          supported in a standard Vite React application.
+      ===================================================== */}
+
+      <style>
+        {courseDetailCustomStyles}
+      </style>
     </div>
   );
 };
