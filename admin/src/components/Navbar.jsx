@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   ListChecks,
@@ -9,14 +9,7 @@ import {
   BookmarkCheck,
   GraduationCap,
   User,
-  ArrowRight,
 } from "lucide-react";
-import {
-  SignedIn,
-  SignedOut,
-  SignInButton,
-  UserButton,
-} from "@clerk/clerk-react";
 
 const MENU_ITEMS = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -27,18 +20,21 @@ const MENU_ITEMS = [
 
 const Navbar = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Close mobile drawer when route changes
   useEffect(() => {
     setMobileMenuOpen(false);
   }, [location.pathname]);
 
+  const handleSignOut = () => {
+    localStorage.removeItem("learnhub_admin_session");
+    navigate("/login");
+  };
+
   return (
     <nav className="fixed inset-x-0 top-0 z-50 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md transition-all">
       <div className="flex w-full items-center justify-between gap-3 px-4 sm:px-6 lg:px-8 h-16">
-        
-        {/* Brand Logo */}
         <Link to="/" className="flex items-center gap-2 group">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-500/20 group-hover:scale-105 transition-transform duration-200">
             <GraduationCap className="h-5 w-5" />
@@ -48,7 +44,6 @@ const Navbar = () => {
           </span>
         </Link>
 
-        {/* Desktop Navigation Links */}
         <div className="hidden md:flex items-center gap-1.5 lg:gap-2">
           {MENU_ITEMS.map((item) => {
             const Icon = item.icon;
@@ -70,23 +65,16 @@ const Navbar = () => {
           })}
         </div>
 
-        {/* Right Actions & Clerk Auth Integration */}
         <div className="hidden md:flex items-center gap-2">
-          <SignedOut>
-            <SignInButton mode="modal">
-              <button className="inline-flex items-center gap-1.5 px-2.5 py-2 text-sm font-medium text-slate-300 hover:text-white transition-colors rounded-lg hover:bg-slate-800/80">
-                <User className="h-4 w-4" />
-                <span>Sign In</span>
-              </button>
-            </SignInButton>
-          </SignedOut>
-
-          <SignedIn>
-            <UserButton afterSignOutUrl="/" />
-          </SignedIn>
+          <button
+            onClick={handleSignOut}
+            className="inline-flex items-center gap-1.5 px-2.5 py-2 text-sm font-medium text-slate-300 hover:text-white transition-colors rounded-lg hover:bg-slate-800/80"
+          >
+            <User className="h-4 w-4" />
+            <span>Sign Out</span>
+          </button>
         </div>
 
-        {/* Mobile Menu Toggle Button */}
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           className="md:hidden p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
@@ -96,7 +84,6 @@ const Navbar = () => {
         </button>
       </div>
 
-      {/* Mobile Drawer */}
       {mobileMenuOpen && (
         <div className="md:hidden border-b border-slate-800 bg-slate-900/95 backdrop-blur-md px-4 pt-2 pb-6 space-y-2">
           <div className="flex flex-col space-y-1 py-2">
@@ -121,19 +108,12 @@ const Navbar = () => {
           </div>
 
           <div className="pt-4 border-t border-slate-800 flex flex-col gap-2">
-            <SignedOut>
-              <SignInButton mode="modal">
-                <button className="w-full py-2.5 text-center text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-all">
-                  Sign In
-                </button>
-              </SignInButton>
-            </SignedOut>
-            <SignedIn>
-              <div className="flex items-center gap-2 px-3 py-2">
-                <UserButton afterSignOutUrl="/" />
-                <span className="text-base text-slate-300">Account Settings</span>
-              </div>
-            </SignedIn>
+            <button
+              onClick={handleSignOut}
+              className="w-full py-2.5 text-center text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-all"
+            >
+              Sign Out
+            </button>
           </div>
         </div>
       )}

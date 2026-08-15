@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { GraduationCap, Menu, X, ArrowRight, User } from "lucide-react";
 
 const Navbar = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
 
   const links = [
     { name: "Home", href: "/" },
@@ -15,7 +16,11 @@ const Navbar = () => {
     { name: "My Courses", href: "/mycourses" },
   ];
 
-  // Close mobile drawer when route changes
+  const handleSignOut = () => {
+    localStorage.removeItem("learnhub_session");
+    navigate("/login");
+  };
+
   useEffect(() => {
     setMobileMenuOpen(false);
   }, [location.pathname]);
@@ -23,8 +28,6 @@ const Navbar = () => {
   return (
     <nav className="fixed inset-x-0 top-0 z-50 border-b border-slate-200/80 bg-white/90 backdrop-blur-md transition-all">
       <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-2 px-4 sm:px-6 lg:px-8 h-16">
-        
-        {/* Brand Logo */}
         <Link to="/" className="flex items-center gap-2 group">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-500/20 group-hover:scale-105 transition-transform duration-200">
             <GraduationCap className="h-5 w-5" />
@@ -34,7 +37,6 @@ const Navbar = () => {
           </span>
         </Link>
 
-        {/* Desktop Navigation Links */}
         <div className="hidden md:flex items-center gap-0.5 lg:gap-1">
           {links.map((link) => {
             const isActive = location.pathname === link.href;
@@ -54,15 +56,14 @@ const Navbar = () => {
           })}
         </div>
 
-        {/* Right CTA Actions */}
         <div className="hidden md:flex items-center gap-1.5">
-          <Link
-            to="/login"
+          <button
+            onClick={handleSignOut}
             className="inline-flex items-center gap-1.5 px-2.5 py-2 text-sm font-medium text-slate-700 hover:text-indigo-600 transition-colors rounded-lg hover:bg-slate-100"
           >
             <User className="h-4 w-4" />
-            <span>Sign In</span>
-          </Link>
+            <span>Sign Out</span>
+          </button>
           <Link
             to="/register"
             className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm hover:shadow-md hover:shadow-indigo-200 transition-all active:scale-95"
@@ -72,7 +73,6 @@ const Navbar = () => {
           </Link>
         </div>
 
-        {/* Mobile Menu Toggle Button */}
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           className="md:hidden p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
@@ -82,7 +82,6 @@ const Navbar = () => {
         </button>
       </div>
 
-      {/* Mobile Drawer */}
       {mobileMenuOpen && (
         <div className="md:hidden border-b border-slate-200 bg-white/95 backdrop-blur-md px-4 pt-2 pb-6 space-y-2 animate-in slide-in-from-top-2 duration-200">
           <div className="flex flex-col space-y-1 py-2">
@@ -105,12 +104,12 @@ const Navbar = () => {
           </div>
 
           <div className="pt-4 border-t border-slate-100 flex flex-col gap-2">
-            <Link
-              to="/login"
+            <button
+              onClick={handleSignOut}
               className="w-full py-2.5 text-center text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
             >
-              Sign In
-            </Link>
+              Sign Out
+            </button>
             <Link
               to="/register"
               className="w-full py-2.5 text-center text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition-all"

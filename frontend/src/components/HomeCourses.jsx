@@ -106,32 +106,39 @@ const HomeCourses = () => {
   const featuredCourses = courses.slice(0, 8);
 
   // Formats Price with Discount handling
-  const renderPricing = (course) => {
-    if (course?.isFree || !course?.price) {
-      return (
-        <span className="text-lg font-extrabold text-emerald-600">Free</span>
-      );
-    }
-
-    const { sale, original } = course.price;
-
-    if (sale != null && original != null && sale < original) {
-      return (
-        <div className="flex items-baseline gap-2">
-          <span className="text-lg font-extrabold text-slate-900">₹{sale}</span>
-          <span className="text-xs font-medium text-slate-400 line-through">
-            ₹{original}
-          </span>
-        </div>
-      );
-    }
-
+const renderPricing = (course) => {
+  if (course?.isFree || !course?.price) {
     return (
-      <span className={homeCoursesStyles.salePrice}>
-        ₹{sale ?? original ?? "Free"}
+      <span className="text-lg font-extrabold text-emerald-600">
+        Free
       </span>
     );
-  };
+  }
+
+  const { sale, original } = course.price;
+
+  // Discounted course
+  if (sale != null && original != null && sale < original) {
+    return (
+      <div className="flex items-baseline gap-2">
+        <span className="text-lg font-extrabold text-slate-900">
+          Rs. {sale.toLocaleString()}
+        </span>
+
+        <span className="text-xs font-medium text-slate-400 line-through">
+          Rs. {original.toLocaleString()}
+        </span>
+      </div>
+    );
+  }
+
+  // Regular price
+  return (
+    <span className={homeCoursesStyles.salePrice}>
+      Rs. {(sale ?? original ?? 0).toLocaleString()}
+    </span>
+  );
+};
 
   return (
     <section className={homeCoursesStyles.container}>
@@ -235,18 +242,19 @@ const HomeCourses = () => {
           })}
         </div>
 
+
         {/* CTA Banner Button */}
-        <div className={homeCoursesStyles.ctaContainer}>
-          <button
-            onClick={() => navigate("/courses")}
-            className={homeCoursesStyles.ctaButton}
-          >
-            <span className={homeCoursesStyles.ctaText}>
-              Browse All Courses
-            </span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        </div>
+    <div className={homeCoursesStyles.ctaContainer}>
+  <button
+    onClick={() => navigate("/courses")}
+    className="inline-flex items-center gap-2 px-8 py-3.5 bg-indigo-800 hover:bg-indigo-900 text-white font-semibold rounded-xl shadow-md hover:shadow-lg transition-all duration-200"
+  >
+    <span className={homeCoursesStyles.ctaText}>
+      Browse All Courses
+    </span>
+    <ArrowRight className="w-4 h-4" />
+  </button>
+</div>
       </div>
     </section>
   );
