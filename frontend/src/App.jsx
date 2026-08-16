@@ -6,6 +6,8 @@ import Contact from "./pages/Contact";
 import Faculty from "./pages/Faculty";
 import Courses from "./pages/Courses";
 import MyCoursesPage from "./pages/MyCoursesPage";
+import LearnPage from "./pages/LearnPage";
+import CertificatePage from "./pages/Certificate";
 import CourseDetailPage from "./pages/CourseDetailPage";
 import AuthPage from "./pages/AuthPage";
 
@@ -33,6 +35,11 @@ const App = () => {
       <Route path="/courses" element={<ProtectedRoute><Courses /></ProtectedRoute>} />
       <Route path="/mycourses" element={<ProtectedRoute><MyCoursesPage /></ProtectedRoute>} />
       <Route path="/course/:id" element={<ProtectedRoute><CourseDetailPage /></ProtectedRoute>} />
+      
+      {/* Learning & Certificate Routes */}
+      <Route path="/learn/:courseId" element={<ProtectedRoute><LearnPage /></ProtectedRoute>} />
+      <Route path="/certificate/:courseId" element={<ProtectedRoute><CertificatePage /></ProtectedRoute>} />
+      
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   );

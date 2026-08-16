@@ -3,21 +3,15 @@ import {
   BookMarked,
   BookOpenText,
   Search,
-  ShoppingCart,
   Users,
   X,
   AlertCircle,
-  TrendingUp,
+  Video,
+  Layers,
+  CheckCircle2,
 } from "lucide-react";
 
 const API_BASE = "http://localhost:4000";
-
-const fmtCurrency = (n) => {
-  if (n == null) return "Rs. 0";
-  const num = Number(n);
-  if (Number.isNaN(num)) return "Rs. 0";
-  return `Rs. ${num.toLocaleString()}`;
-};
 
 const DashboardPage = () => {
   const [searchTerm, setSearchTerm] = useState("");
@@ -26,35 +20,45 @@ const DashboardPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const buildStats = useCallback((backendStats) => {
-    const totalBookings = backendStats?.totalBookings ?? 0;
-    const totalRevenue = backendStats?.totalRevenue ?? 0;
-    const bookingsLast7Days = backendStats?.bookingsLast7Days ?? 0;
-    const topCourses = backendStats?.topCourses ?? [];
+  const buildStats = useCallback((coursesList) => {
+    const totalCourses = coursesList.length;
+    
+    // Calculate total modules (lectures array) across all courses
+    const totalModules = coursesList.reduce((acc, c) => {
+      return acc + (Array.isArray(c.lectures) ? c.lectures.length : 0);
+    }, 0);
+
+    // Calculate total chapters (video lessons) across all modules
+    const totalChapters = coursesList.reduce((acc, c) => {
+      if (!Array.isArray(c.lectures)) return acc;
+      return acc + c.lectures.reduce((lAcc, l) => {
+        return lAcc + (Array.isArray(l.chapters) ? l.chapters.length : 0);
+      }, 0);
+    }, 0);
 
     return [
       {
-        title: "Total Bookings",
-        value: totalBookings.toLocaleString(),
-        icon: Users,
+        title: "Total Courses",
+        value: totalCourses.toLocaleString(),
+        icon: BookOpenText,
         color: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20",
       },
       {
-        title: "Total Revenue",
-        value: fmtCurrency(totalRevenue),
-        icon: TrendingUp,
+        title: "Active Curriculum",
+        value: `${totalCourses} Published`,
+        icon: CheckCircle2,
         color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
       },
       {
-        title: "Bookings (Last 7d)",
-        value: bookingsLast7Days.toLocaleString(),
-        icon: ShoppingCart,
+        title: "Total Modules",
+        value: totalModules.toLocaleString(),
+        icon: Layers,
         color: "text-amber-400 bg-amber-500/10 border-amber-500/20",
       },
       {
-        title: "Top Courses",
-        value: (topCourses && topCourses.length) || 0,
-        icon: BookMarked,
+        title: "Video Lessons",
+        value: totalChapters.toLocaleString(),
+        icon: Video,
         color: "text-purple-400 bg-purple-500/10 border-purple-500/20",
       },
     ];
@@ -65,73 +69,38 @@ const DashboardPage = () => {
     setLoading(true);
     setError(null);
 
-    const fetchStats = () =>
-      fetch(`${API_BASE}/api/booking/stats`)
-        .then((r) => r.json())
-        .then((j) =>
-          j.success ? j.stats : Promise.reject(j.message || "Failed to load booking stats")
-        );
-
-    const fetchCourses = () =>
-      fetch(`${API_BASE}/api/course`)
-        .then((r) => r.json())
-        .then((j) =>
-          j.success ? j.courses : Promise.reject(j.message || "Failed to load course list")
-        );
-
-    Promise.all([fetchStats(), fetchCourses()])
-      .then(([stats, courses]) => {
+    fetch(`${API_BASE}/api/course`)
+      .then((r) => r.json())
+      .then((j) => {
         if (!mounted) return;
-
-        const topLookup = {};
-        if (Array.isArray(stats?.topCourses)) {
-          stats.topCourses.forEach((t) => {
-            if (!t) return;
-            const name = t.courseName || "";
-            topLookup[name] = {
-              purchases: Number(t.count || 0),
-              revenue: Number(t.revenue || 0),
-            };
-          });
+        if (!j.success) {
+          throw new Error(j.message || "Failed to load course list");
         }
 
-        const mapped = (courses || []).map((c) => {
+        const rawCourses = j.courses || [];
+
+        const mapped = rawCourses.map((c) => {
           const id = c._id ?? c.id ?? c.courseId ?? Math.random().toString();
           const name = c.name ?? c.title ?? "Untitled Course";
           const instructor = c.teacher ?? c.instructor ?? "Unknown";
-          const metrics = topLookup[name] || { purchases: 0, revenue: 0 };
-          
-          const students = metrics.purchases || (c.students ?? 0);
-          const purchases = metrics.purchases || (c.purchases ?? 0);
-          const earnings = metrics.revenue ?? c.earnings ?? 0;
 
-          let priceDisplay = "Free";
-          if (c.price && (c.price.sale != null || c.price.original != null)) {
-            const sale = c.price.sale != null ? Number(c.price.sale) : null;
-            const orig = c.price.original != null ? Number(c.price.original) : null;
-            priceDisplay =
-              sale != null
-                ? fmtCurrency(sale)
-                : orig != null
-                ? fmtCurrency(orig)
-                : "Free";
-          } else if (c.pricingType && c.pricingType !== "free") {
-            priceDisplay = "Rs. 0";
-          }
+          const modulesCount = Array.isArray(c.lectures) ? c.lectures.length : 0;
+          
+          const chaptersCount = Array.isArray(c.lectures)
+            ? c.lectures.reduce((acc, l) => acc + (Array.isArray(l.chapters) ? l.chapters.length : 0), 0)
+            : 0;
 
           return {
             id,
             name,
             instructor,
-            students,
-            price: priceDisplay,
-            purchases,
-            earnings: fmtCurrency(earnings),
+            modulesCount,
+            chaptersCount,
           };
         });
 
-        setStatsData(buildStats(stats));
         setCoursesData(mapped);
+        setStatsData(buildStats(rawCourses));
       })
       .catch((err) => {
         console.error("Dashboard fetch error:", err);
@@ -147,10 +116,10 @@ const DashboardPage = () => {
   const stats = useMemo(() => {
     if (statsData) return statsData;
     return [
-      { title: "Total Bookings", value: "0", icon: Users, color: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20" },
-      { title: "Total Revenue", value: "Rs. 0", icon: TrendingUp, color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
-      { title: "Bookings (Last 7d)", value: "0", icon: ShoppingCart, color: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
-      { title: "Top Courses", value: "0", icon: BookMarked, color: "text-purple-400 bg-purple-500/10 border-purple-500/20" },
+      { title: "Total Courses", value: "0", icon: BookOpenText, color: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20" },
+      { title: "Active Curriculum", value: "0 Published", icon: CheckCircle2, color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
+      { title: "Total Modules", value: "0", icon: Layers, color: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
+      { title: "Video Lessons", value: "0", icon: Video, color: "text-purple-400 bg-purple-500/10 border-purple-500/20" },
     ];
   }, [statsData]);
 
@@ -168,10 +137,10 @@ const DashboardPage = () => {
         {/* Header */}
         <div className="border-b border-slate-800 pb-5">
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
-            Dashboard Overview
+            Course Management Dashboard
           </h1>
           <p className="text-slate-400 text-sm mt-1">
-            Welcome back! Here is an overview of course performance and revenue metrics.
+            Overview of course structure, module details, and published instructional content.
           </p>
         </div>
 
@@ -212,8 +181,8 @@ const DashboardPage = () => {
         <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-6 shadow-xl space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-              <BookOpenText className="h-5 w-5 text-indigo-400" />
-              <h2 className="text-lg font-semibold text-white">Course Performance</h2>
+              <BookMarked className="h-5 w-5 text-indigo-400" />
+              <h2 className="text-lg font-semibold text-white">Course Catalog</h2>
             </div>
 
             {/* Search Input */}
@@ -243,11 +212,10 @@ const DashboardPage = () => {
             <table className="w-full text-left border-collapse">
               <thead className="bg-slate-900/60 border-b border-slate-700/60 text-xs text-slate-400 font-semibold uppercase tracking-wider">
                 <tr>
-                  <th className="px-4 sm:px-6 py-3.5">Course</th>
-                  <th className="px-4 sm:px-6 py-3.5">Students</th>
-                  <th className="px-4 sm:px-6 py-3.5">Price</th>
-                  <th className="px-4 sm:px-6 py-3.5">Purchases</th>
-                  <th className="px-4 sm:px-6 py-3.5">Earnings</th>
+                  <th className="px-4 sm:px-6 py-3.5">Course Name</th>
+                  <th className="px-4 sm:px-6 py-3.5">Instructor</th>
+                  <th className="px-4 sm:px-6 py-3.5">Modules</th>
+                  <th className="px-4 sm:px-6 py-3.5">Video Lessons</th>
                 </tr>
               </thead>
 
@@ -256,10 +224,10 @@ const DashboardPage = () => {
                   Array.from({ length: 4 }).map((_, idx) => (
                     <tr key={idx} className="hover:bg-slate-700/20 transition">
                       <td className="px-4 sm:px-6 py-4">
-                        <div className="space-y-2">
-                          <div className="h-4 w-48 bg-slate-700/50 animate-pulse rounded" />
-                          <div className="h-3 w-28 bg-slate-800 animate-pulse rounded" />
-                        </div>
+                        <div className="h-4 w-48 bg-slate-700/50 animate-pulse rounded" />
+                      </td>
+                      <td className="px-4 sm:px-6 py-4">
+                        <div className="h-4 w-28 bg-slate-700/50 animate-pulse rounded" />
                       </td>
                       <td className="px-4 sm:px-6 py-4">
                         <div className="h-4 w-12 bg-slate-700/50 animate-pulse rounded" />
@@ -267,37 +235,22 @@ const DashboardPage = () => {
                       <td className="px-4 sm:px-6 py-4">
                         <div className="h-4 w-16 bg-slate-700/50 animate-pulse rounded" />
                       </td>
-                      <td className="px-4 sm:px-6 py-4">
-                        <div className="h-4 w-12 bg-slate-700/50 animate-pulse rounded" />
-                      </td>
-                      <td className="px-4 sm:px-6 py-4">
-                        <div className="h-4 w-20 bg-slate-700/50 animate-pulse rounded" />
-                      </td>
                     </tr>
                   ))
                 ) : (
                   filteredCourses.map((course) => (
                     <tr key={course.id} className="hover:bg-slate-700/30 transition">
                       <td className="px-4 sm:px-6 py-4">
-                        <div>
-                          <p className="font-semibold text-slate-100">{course.name}</p>
-                          <p className="text-xs text-slate-400 mt-0.5">{course.instructor}</p>
-                        </div>
+                        <p className="font-semibold text-slate-100">{course.name}</p>
                       </td>
-                      <td className="px-4 sm:px-6 py-4 font-medium text-slate-300">
-                        {course.students.toLocaleString()}
+                      <td className="px-4 sm:px-6 py-4 text-slate-300">
+                        {course.instructor}
                       </td>
                       <td className="px-4 sm:px-6 py-4 font-medium text-indigo-400">
-                        {course.price}
+                        {course.modulesCount} {course.modulesCount === 1 ? "Module" : "Modules"}
                       </td>
-                      <td className="px-4 sm:px-6 py-4">
-                        <div className="inline-flex items-center gap-1.5 font-medium text-slate-300">
-                          <ShoppingCart className="h-3.5 w-3.5 text-slate-400" />
-                          <span>{course.purchases.toLocaleString()}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 sm:px-6 py-4 font-semibold text-emerald-400">
-                        {course.earnings}
+                      <td className="px-4 sm:px-6 py-4 font-medium text-purple-400">
+                        {course.chaptersCount} {course.chaptersCount === 1 ? "Lesson" : "Lessons"}
                       </td>
                     </tr>
                   ))

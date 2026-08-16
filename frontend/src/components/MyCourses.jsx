@@ -284,7 +284,7 @@ const MyCourse = () => {
                         {isCompleted ? (
                           <button
                             onClick={() => navigate(`/course/${course.id}/certificate`)}
-                            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold text-xs rounded-xl transition-all"
+                            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold text-xs rounded-xl transition-all" onClick={() => navigate(`/certificate/${course.id}`)}
                           >
                             <Award className="w-4 h-4" />
                             <span>View Certificate</span>
@@ -292,7 +292,7 @@ const MyCourse = () => {
                         ) : (
                           <button
                             onClick={() => navigate(`/course/${course.id}/learn`)}
-                            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl shadow-sm transition-all"
+                            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl shadow-sm transition-all" onClick={() => navigate(`/learn/${course.id}`)}
                           >
                             <PlayCircle className="w-4 h-4" />
                             <span>Continue Learning</span>
